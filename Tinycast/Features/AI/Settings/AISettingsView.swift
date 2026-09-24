@@ -73,13 +73,23 @@ struct AISettingsView: View {
                     .foregroundStyle(.secondary)
             }
             AIModelSelectionRows(
-                selection: settings.defaultModel,
-                select: { $0.map(settings.select) },
+                selection: settings.quickAIDefaultModel,
+                select: { $0.map { settings.select($0, surface: .quickAI) } },
                 modelLabel: {
-                    SettingsRowTitle(.aiDefault, "Default model")
+                    SettingsRowTitle(.aiDefault, "Quick AI model")
                 },
                 effortLabel: {
-                    SettingsRowTitle(.aiDefault, "Reasoning effort")
+                    SettingsRowTitle(.aiDefault, "Quick AI reasoning effort")
+                }
+            )
+            AIModelSelectionRows(
+                selection: settings.defaultModel,
+                select: { $0.map { settings.select($0, surface: .chat) } },
+                modelLabel: {
+                    SettingsRowTitle(.aiDefault, "AI Chat model")
+                },
+                effortLabel: {
+                    SettingsRowTitle(.aiDefault, "AI Chat reasoning effort")
                 }
             )
         } header: {
@@ -92,10 +102,11 @@ struct AISettingsView: View {
     }
 
     private var defaultModelFooter: String {
-        if settings.defaultModel?.isOnDevice == true {
+        let chosen = [settings.quickAIDefaultModel, settings.defaultModel]
+        if chosen.allSatisfy({ $0?.isOnDevice == true && $0 != nil }) {
             return "Apple Intelligence runs on this Mac. Nothing leaves it."
         }
-        return settings.defaultModel == nil
+        return chosen.contains { $0 == nil }
             ? "Turn on Apple Intelligence, or add a provider above."
             : "Only the selected provider is contacted."
     }

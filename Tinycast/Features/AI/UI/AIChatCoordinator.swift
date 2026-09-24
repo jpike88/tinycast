@@ -536,10 +536,11 @@ final class AIChatCoordinator {
             installedAI: core.installedAI)
     }
 
-    /// The chat's own model while it is still reachable; otherwise the default a new chat takes.
+    /// The chat's own model while it is still reachable; otherwise the default its surface names.
     func model(for chat: AIChatState) -> AIModelSelection? {
         if let own = chat.session.model, isReachable(own) { return own }
-        return core.aiSettings.defaultModel
+        return chats.isQuickAI(chat)
+            ? core.aiSettings.quickAIDefaultModel : core.aiSettings.defaultModel
     }
 
     /// A route removed in Settings falls back to the default rather than failing the chat.
@@ -620,20 +621,20 @@ final class AIChatCoordinator {
     func warmUpModelList() {
         guard let stored = core.aiSettings.defaultModel else {
             prepareModelSwitcher()
-            core.aiSettings.resolveDefaultModel()
+            core.aiSettings.resolveDefaultModels()
             return
         }
         // Only an installed route needs checking; every other one is already settled on disk.
         if stored.source.installedKind != nil { prepareModelSwitcher() }
     }
 
-    /// The chat keeps the pick; the default follows it, so the next new chat starts there too.
+    /// The chat keeps the pick; that surface's default follows it, so its next new chat starts there.
     func selectModel(_ option: AIModelOption, in chat: AIChatState) {
         let selection = AIModelOption.withDefaultEffort(
             option.selection, settings: core.aiSettings,
             subscription: core.chatGPTSubscription, installedAI: core.installedAI)
         chat.setModel(selection)
-        core.aiSettings.select(selection)
+        core.aiSettings.select(selection, surface: surface(of: chat))
     }
 
     func reasoningEfforts(for chat: AIChatState) -> [ChatGPTSubscription.Effort] {
@@ -652,7 +653,12 @@ final class AIChatCoordinator {
     func selectReasoningEffort(_ effort: ChatGPTSubscription.Effort, in chat: AIChatState) {
         guard let selection = model(for: chat)?.withEffort(effort.id) else { return }
         chat.setModel(selection)
-        core.aiSettings.select(selection)
+        core.aiSettings.select(selection, surface: surface(of: chat))
+    }
+
+    /// Which surface a chat lives on right now; one that answers elsewhere counts as the window's.
+    private func surface(of chat: AIChatState) -> AIDefaultSurface {
+        chats.isQuickAI(chat) ? .quickAI : .chat
     }
 
     @discardableResult

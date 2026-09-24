@@ -45,6 +45,11 @@ final class AIChatSurfacesState {
         live.first { $0.holds(id) }
     }
 
+    /// A chat parked mid-reply elsewhere still names the window's default, never Quick AI's.
+    func isQuickAI(_ chat: AIChatState) -> Bool {
+        chat === quickAI
+    }
+
     // MARK: - The window
 
     /// Reuses the live state wherever it is, so a reply still arriving keeps arriving on screen.
