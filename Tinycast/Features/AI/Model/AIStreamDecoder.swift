@@ -8,7 +8,7 @@ struct SSEParser: Sendable {
         var payloads: [String] = []
         while let boundary = nextBoundary() {
             let frame = buffer[..<boundary.lowerBound]
-            buffer.removeSubrange(buff er.startIndex..<boundary.upperBound)
+            buffer.removeSubrange(buffer.startIndex..<boundary.upperBound)
             if let payload = Self.payload(in: frame) { payloads.append(payload) }
         }
         return payloads
