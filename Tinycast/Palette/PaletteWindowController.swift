@@ -173,11 +173,14 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
         guard !core.extensions.isAuthorizing else { return }
         popToRootTimer?.invalidate()
         let timeout = core.settings.popToRootTimeout
-        guard timeout != .immediately else {
+        // A Quick AI dismissal usually means a stray focus loss, so even Immediately owes the
+        // screen five seconds in play: a hotkey re-summon inside the window restores the chat.
+        if timeout == .immediately && core.palette.mode != .ai {
             popToRoot()
             return
         }
-        popToRootTimer = Timer.scheduledTimer(withTimeInterval: timeout.interval, repeats: false) {
+        let interval = timeout == .immediately ? 5.0 : timeout.interval
+        popToRootTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) {
             [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !self.core.extensions.isAuthorizing else { return }
