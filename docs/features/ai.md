@@ -56,7 +56,8 @@ bottom with the model picker. ⌘J hands a Quick AI conversation to the window.
   never silently selects a networked model.
 - **Every chat keeps its own model.** `ChatSession.model` is stamped on the first send and changed by
   either surface's picker; `conversation_details` stores it, so reopening a chat reopens its model and
-  effort. A pick also moves the app default, which is only what a *new* chat starts on. A chat whose
+  effort. A pick also moves that surface's default — Quick AI and AI Chat each store their own in
+  Settings → AI, so a pick in one never moves what a new chat on the other starts on. A chat whose
   route was removed in Settings answers on the default rather than failing
   (`AIChatCoordinator.model(for:)`), and keeps its stored pick in case the route comes back.
 - **Reasoning is shown, folded, and never resent.** `AIStreamEvent.reasoning` carries the text a route
@@ -731,12 +732,13 @@ width and clipped the search field well short of the button.
 
 Settings → AI is a normal grouped `Form` inside Tinycast's existing Settings window. Its top AI
 section owns the feature switch and the **Providers → Manage…** action, and **Default model** below
-it picks the app-wide route and its reasoning effort. Provider management opens as a sheet, where
+it holds a pick and its reasoning effort for each surface — **Quick AI model** and **AI Chat model**.
+Provider management opens as a sheet, where
 **Installed AI** reports Codex, Claude, Grok, OpenCode and Cursor separately as checking, ready, sign-in required,
 missing or failed. It never contains a credential field: installation and sign-in happen in each
 command's own flow. **API Connections** remains the explicit Keychain-backed path in that sheet. A
-pick in Quick AI's header or the AI Chat composer sets that chat's model and moves this default with
-it, while Quick Actions keeps its own model selection.
+pick in Quick AI's header or the AI Chat composer sets that chat's model and moves that surface's
+default with it, while Quick Actions keeps its own model selection.
 
 The signed-in Codex address is the one thing on the pane that names a person, and a Settings pane
 is what gets screenshotted into a bug report or left on screen in a recording, so `RedactedText`
