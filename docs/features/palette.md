@@ -524,8 +524,11 @@ Panel-owned chords use the same translation directly. A ⌘ chord translates thr
 Command table, so "Dvorak – QWERTY ⌘" keeps giving QWERTY positions while Command is held; a ⌃ chord
 translates without it, since only Command is remapped. A non-ASCII input source or IME therefore
 cannot turn ⌘K into a different logical key, while Dvorak and other ASCII layouts keep their own
-letter positions. No replacement event is synthesized, and unmodified typing stays on the active
-input source and follows the normal composition path.
+letter positions. A key SwiftUI spells in the private-use area — the arrows, and the page, home and
+forward-delete keys — skips the recovery outright: `UCKeyTranslate` answers those keycodes with ASCII
+control characters, which the ASCII test would otherwise accept in place of the key itself, and a
+layout has no letter position to recover for them anyway. No replacement event is synthesized, and
+unmodified typing stays on the active input source and follows the normal composition path.
 
 ## The keyboard belongs to the search field
 
