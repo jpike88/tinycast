@@ -172,6 +172,19 @@ enum BashToolSchema {
         return .success(URL(fileURLWithPath: expanded, isDirectory: true))
     }
 
+    /// The row's code block shows the command exactly as the model handed it over; this
+    /// reads one key instead of running the full parse, so a malformed call still gets a row.
+    static func command(in arguments: String) -> String? {
+        guard
+            let value = try? JSONSerialization.jsonObject(
+                with: Data(arguments.utf8), options: []),
+            let object = value as? [String: Any],
+            let command = object["command"] as? String,
+            !command.isEmpty
+        else { return nil }
+        return command
+    }
+
     static func parseTaskID(_ arguments: String) -> Result<String, BashParseFailure> {
         guard
             let value = try? JSONSerialization.jsonObject(

@@ -527,6 +527,7 @@ run ai-chat-test           Tinycast/Features/AI/Model/AIRequest.swift \
                            Tinycast/Features/AI/Model/ChatFind.swift \
                            Tinycast/Features/AI/Model/ChatCitations.swift \
                            Tinycast/Features/AI/Model/ChatToolScope.swift \
+                           Tinycast/Features/AI/Model/BashToolSchema.swift \
                            Tinycast/Features/AI/Model/MarkdownBlock.swift \
                            Tinycast/Features/AI/Service/AIProvider.swift \
                            Tinycast/Features/AI/Service/ChatHistoryStore.swift \

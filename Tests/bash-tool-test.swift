@@ -83,6 +83,13 @@ struct BashToolTest {
         case .success: check("a companion with no id is refused", false)
         case .failure: check("a companion with no id is refused", true)
         }
+        check(
+            "the row's detail reads the command out of the arguments",
+            BashToolSchema.command(in: #"{"command":"ls -la"}"#) == "ls -la")
+        check("garbage arguments leave the detail empty", BashToolSchema.command(in: "{}") == nil)
+        check(
+            "an empty command leaves the detail empty",
+            BashToolSchema.command(in: #"{"command":""}"#) == nil)
 
         // MARK: cwd resolution
 
