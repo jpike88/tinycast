@@ -44,7 +44,8 @@ final class QuickAICoordinator {
         }
         chat.startNewChat()
         paletteCoordinator.showPalette(mode: .ai)
-        send(prompt)
+        // The question exists as a sent message now; leaving it as the composer draft would resend it.
+        if send(prompt) { palette.query = "" }
     }
 
     /// Off leaves the screen too, so the palette never shows a feature that is gone.
