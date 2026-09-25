@@ -136,7 +136,12 @@ struct AISettingsView: View {
         return Section {
             Toggle(isOn: $settings.webSearchEnabled) {
                 SettingsRowTitle(.aiChat, "Web search")
-                Text("Codex and OpenRouter only. Prompts go to a search engine.")
+                Text(
+                    "Codex and OpenRouter natively; every other model that calls tools searches "
+                        + "Brave's web index. Prompts go to a search engine.")
+            }
+            if settings.webSearchEnabled {
+                WebSearchSettingsRow(settings: settings, core: core)
             }
             Picker(selection: $settings.toolRounds) {
                 ForEach(AIToolRounds.allCases) { Text($0.title).tag($0) }
@@ -631,7 +636,92 @@ struct AISettingsView: View {
     }
 }
 
-private struct AIConnectionRow: View {
+private /// The built-in `web_search` tool's settings: only the Brave Search API key it calls with.
+struct WebSearchSettingsRow: View {
+    let settings: AISettingsStore
+    let core: AppCore
+
+    private let keyStore = KeychainSecretStore.aiAPIKeys
+    @State private var key = ""
+    @State private var keyStored = false
+    @State private var keyError: String?
+
+    private static let guideTitle = "Setting up web search"
+    private static let guideSymbol = "globe"
+    private static let guide = """
+        Searches run on Brave's web index — results with titles, links and snippets.
+
+        1. Sign in at api-dashboard.search.brave.com and activate the free “Web Search” plan. That's all the setup there is.
+        2. Create a subscription's API key and paste it above. It's kept in Keychain, on this Mac only.
+
+        The free plan covers a couple of thousand queries a month at about one a second; a search only runs when the model asks for one.
+        """
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            LabeledContent {
+                HStack(spacing: Theme.Spacing.sm) {
+                    SecureField(
+                        keyStored ? "Stored in Keychain" : "Paste an API key",
+                        text: $key)
+                        .frame(maxWidth: 320)
+                    if keyStored {
+                        Button("Remove") { removeKey() }
+                    }
+                    Button("Save") { saveKey() }
+                        .disabled(key.isEmpty)
+                }
+            } label: {
+                Text("API key (If using Brave Search)")
+            }
+            if let keyError {
+                Text(keyError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else {
+                Text(
+                    "The key is stored in Keychain, on this Mac only. Tools run against "
+                        + "Brave Search when the selected model has no web search of its own.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button("Read more…") { showGuide() }
+                .buttonStyle(.link)
+                .font(.caption)
+        }
+        .onAppear { keyStored = (try? keyStore.hasSecret(for: AIWebSearch.keyAccount)) == true }
+    }
+
+    private func saveKey() {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try keyStore.setSecret(trimmed, for: AIWebSearch.keyAccount)
+            keyStored = true
+            key = ""
+            keyError = nil
+        } catch {
+            keyError = "The key could not be stored in Keychain."
+        }
+    }
+
+    private func removeKey() {
+        try? keyStore.removeSecret(for: AIWebSearch.keyAccount)
+        keyStored = false
+        keyError = nil
+    }
+
+    private func showGuide() {
+        Task {
+            await core.showNotice(
+                title: Self.guideTitle, message: Self.guide, symbol: Self.guideSymbol,
+                tone: .neutral)
+        }
+    }
+}
+
+struct AIConnectionRow: View {
     let connection: AIConnection
     let hasStoredKey: Bool
     let onEdit: () -> Void

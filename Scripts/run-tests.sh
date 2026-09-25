@@ -516,6 +516,9 @@ run ai-provider-test       Tinycast/Features/Settings/AppSettingsKey.swift \
                            Tinycast/Features/AI/Settings/AISettingsStore.swift \
                            Tinycast/Features/MCP/Model/MCPServer.swift \
                            Tinycast/Features/MCP/Model/MCPTrustPolicy.swift
+run ai-web-search-test     Tinycast/Features/AI/Model/AITool.swift \
+                           Tinycast/Features/AI/Model/JSONValue.swift \
+                           Tinycast/Features/AI/Model/AIWebSearch.swift
 run ai-chat-test           Tinycast/Features/AI/Model/AIRequest.swift \
                            Tinycast/Features/AI/Model/AIConnection.swift \
                            Tinycast/Features/AI/Model/AppleIntelligence.swift \
