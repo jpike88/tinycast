@@ -272,8 +272,8 @@ screens hold (see [palette.md](palette.md)).
 - **Detail** — markdown rendered block-by-block (headings, lists, code fences, quotes, rules, tables, fetched
   and inline images) with `AttributedString` handling inline styling, plus `Detail.Metadata` — a
   sidebar on a Detail screen, appended below the markdown in a `List`'s detail pane. An image
-  is full-width and at most 220pt tall; `?raycast-width=` / `?raycast-height=` on its URL, read by
-  `ExtensionImageSize`, can only shrink it within that, never lift the cap. A rowless Detail's screen
+  draws at its own size, shrunk to fit the pane and never enlarged, unless `?raycast-width=` /
+  `?raycast-height=` on its URL, read by `ExtensionImageSize`, size it. A rowless Detail's screen
   actions remain available through the primary ⏎ action and the ⌘K Actions panel.
 - **Appearance** — `environment.appearance` reports the real one, so an extension that branches on it
   is told the truth. It is an injected field on `ExtensionLaunchContext` (a `Model/` type owns no
@@ -389,15 +389,16 @@ screens hold (see [palette.md](palette.md)).
   extension icon and keeps its `tintColor` — which is what makes a palette of `{Icon.Circle, tintColor}`
   rows read as colours rather than a column of grey circles. Untinted symbols use the extension's
   14pt Medium monochrome treatment; a destructive action with no tint of its own falls back to red.
-  Section boundaries add 6pt above and below their separator without moving ordinary rows. The
-  title shares the elastic scroller with the actions. A native, row-height search field below it
-  filters titles through the launcher's fuzzy matcher, preserves section boundaries and centres
-  **No Results** in one row when empty; the scrolling edge beside that field has no dissolve. The
-  8pt resting inset scrolls with the actions, so rows can reach the panel edge without shifting their
-  initial position; hover keeps the shared 10pt menu-row corner. The panel opens and closes from its
-  bottom-right attachment with extension-owned opacity and scale timing, briefly reaching 1.003;
-  its attached corner matches the footer button. The first action is the primary ↵ action; an
-  action's own `shortcut` is matched against modified keystrokes.
+  Section boundaries add the list inset (8pt) above and below their separator without moving
+  ordinary rows; a capped panel ends mid-row, so its edge never lands on a separator, and every
+  hairline is one device pixel. The title shares the elastic scroller with the actions. A native,
+  row-height search field below it filters titles through the launcher's fuzzy matcher, preserves
+  section boundaries and centres **No Results** in one row when empty; the scrolling edge beside that
+  field has no dissolve. The 8pt resting inset scrolls with the actions, so rows can reach the panel
+  edge without shifting their initial position; hover keeps the shared 10pt menu-row corner. The
+  panel opens and closes from its bottom-right attachment with extension-owned opacity and scale
+  timing, briefly reaching 1.003; its attached corner matches the footer button. The first action is
+  the primary ↵ action; an action's own `shortcut` is matched against modified keystrokes.
   `ExtensionCommandScreen.menuContent` hands the whole panel to the palette as a
   `PaletteMenuContent`, so the palette never learns the row type — and a row's handler is taken from
   the flattened `ExtensionAction` list rather than the drawn rows, so ↵ and the panel fire the same
