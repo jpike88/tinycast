@@ -145,6 +145,24 @@ struct AISettingsView: View {
                     "A reply stops after this many; Unlimited runs until Stop. "
                         + "API connections, Codex and Claude.")
             }
+            Toggle(
+                isOn: Binding(
+                    get: { settings.bashToolEnabled },
+                    set: { core.aiChatCoordinator.setBashToolEnabled($0) }))
+            {
+                SettingsRowTitle(.aiChat, "Bash tool")
+                Text(
+                    "API models may run shell commands on this Mac. Each command asks first, "
+                        + "unless trust below says to stay silent.")
+            }
+            if settings.bashToolEnabled {
+                Picker(selection: $settings.bashTrust) {
+                    ForEach(MCPTrust.allCases) { Text($0.title).tag($0) }
+                } label: {
+                    SettingsRowTitle(.aiChat, "Bash trust")
+                    Text("Never Allow keeps the tool out entirely.")
+                }
+            }
         } header: {
             SettingsSectionHeader(.aiChat)
         }

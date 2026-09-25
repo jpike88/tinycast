@@ -114,10 +114,25 @@ struct ChatToolUse: Equatable, Hashable, Sendable {
     let callID: String
     let origin: String
     let title: String
+    /// The command a call carried, when the tool runs one; the row's code block shows it.
+    let detail: String?
     var state: State
     /// Characters of reply text that had arrived when the call started.
     let textOffset: Int
     let sequence: Int
+
+    init(
+        callID: String, origin: String, title: String, state: State,
+        detail: String? = nil, textOffset: Int, sequence: Int
+    ) {
+        self.callID = callID
+        self.origin = origin
+        self.title = title
+        self.detail = detail
+        self.state = state
+        self.textOffset = textOffset
+        self.sequence = sequence
+    }
 
     var label: String {
         let verb = state == .running ? "Calling" : "Called"

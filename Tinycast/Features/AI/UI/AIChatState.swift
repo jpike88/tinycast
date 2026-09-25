@@ -243,14 +243,14 @@ final class AIChatState {
             }
             message.searches = message.searches.map { Self.completed($0) }
             session.replaceLast(with: message)
-        case .toolCall(let id, let origin, let title):
+        case .toolCall(let id, let origin, let title, let detail):
             flushPendingText()
             guard var message = session.messages.last, message.role == .assistant else { return }
             isThinking = false
             message.toolUses.append(
                 ChatToolUse(
                     callID: id, origin: origin, title: title, state: .running,
-                    textOffset: message.text.count, sequence: message.nextSequence))
+                    detail: detail, textOffset: message.text.count, sequence: message.nextSequence))
             session.replaceLast(with: message)
         case .toolResult(let id, let isError):
             guard var message = session.messages.last, message.role == .assistant else { return }

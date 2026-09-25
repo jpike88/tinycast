@@ -326,7 +326,7 @@ struct CodexTurnTests {
             server.received.contains(#"elicitation:{"action":"accept"}"#),
             "an allowed call is accepted, and nothing about persisting it is sent back")
         expect(
-            events.contains(.toolCall(id: "call-1", origin: "Probe", title: "safe_echo")),
+            events.contains(.toolCall(id: "call-1", origin: "Probe", title: "safe_echo", detail: nil)),
             "the call renders as the row the BYOK loop would have written")
         expect(
             events.contains(.toolResult(id: "call-1", isError: false)),
@@ -348,7 +348,7 @@ struct CodexTurnTests {
             asked.calls.isEmpty && server.received.contains(#"elicitation:{"action":"decline"}"#),
             "a call on the reader's own `probe` is declined without asking about Tinycast's")
         expect(
-            events.contains(.toolCall(id: "call-1", origin: "probe", title: "safe_echo")),
+            events.contains(.toolCall(id: "call-1", origin: "probe", title: "safe_echo", detail: nil)),
             "and its row keeps Codex's name, never the title of Tinycast's same-handle server")
     }
 

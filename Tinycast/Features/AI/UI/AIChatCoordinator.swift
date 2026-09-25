@@ -14,6 +14,10 @@ final class AIChatCoordinator {
     private let window: AppWindowController
     /// Chats with a title request in flight, so a quick second reply never asks twice.
     @ObservationIgnored private var naming: [UUID: Task<Void, Never>] = [:]
+    /// Chats whose `bash` calls this session has granted; the flag is the standing one.
+    @ObservationIgnored private var bashGrants: Set<UUID> = []
+    /// Owned here rather than on `AppCore`: only this path hands the model a shell.
+    private let bashExecutor = BashToolExecutor()
 
     init(
         chats: AIChatSurfacesState, settings: AppSettings, appIndex: AppIndex,
@@ -60,6 +64,11 @@ final class AIChatCoordinator {
             let cutoff = core.aiSettings.retention.cutoff(from: Date())
         else { return }
         core.chatHistory.prune(before: cutoff)
+    }
+
+    /// Quit: background commands take their children with them.
+    func prepareForTermination() {
+        bashExecutor.stopAll()
     }
 
     // MARK: - The window
@@ -322,8 +331,94 @@ final class AIChatCoordinator {
         let chatID = chat.session.id
         return AIToolLoopProvider(
             base: provider, tools: tools, maxRounds: core.aiSettings.toolRounds.limit
-        ) { [mcp = core.mcpCoordinator] call in
-            await mcp.invoke(call, in: chatID)
+        ) { [mcp = core.mcpCoordinator, bash = self] call in
+            if BashToolSchema.isBuiltinTool(call.name) {
+                return await bash.invokeBash(call, in: chatID)
+            }
+            return await mcp.invoke(call, in: chatID)
+        }
+    }
+
+    /// The shell the model may call, gated and bounded exactly as an MCP tool is.
+    private func invokeBash(_ call: AIToolCall, in chatID: UUID) async -> AIToolResult {
+        if call.name == BashToolSchema.toolName {
+            switch BashToolSchema.parse(call.arguments) {
+            case .failure(let message): return .failure(call.id, message.message)
+            case .success(let invocation):
+                let cwd: URL
+                switch BashToolSchema.resolveCWD(
+                    invocation, homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+                {
+                case .failure(let message): return .failure(call.id, message.message)
+                case .success(let resolved): cwd = resolved
+                }
+                guard await permitBash(invocation.command, in: chatID, isBackground: invocation.isBackground)
+                else { return .failure(call.id, "The command was not allowed to run.") }
+                if invocation.isBackground {
+                    let id = bashExecutor.startBackground(command: invocation.command, cwd: cwd)
+                    return AIToolResult(
+                        callID: call.id,
+                        content:
+                            "Started in the background as \(id). Read its output with "
+                            + "\(BashToolSchema.getOutputToolName) and stop it with "
+                            + "\(BashToolSchema.killTaskToolName).",
+                        isError: false)
+                }
+                let execution = await BashToolExecutor.run(
+                    invocation: invocation, workingDirectory: cwd)
+                return AIToolResult(
+                    callID: call.id, content: execution.content, isError: false)
+            }
+        }
+        switch BashToolSchema.parseTaskID(call.arguments) {
+        case .failure(let message): return .failure(call.id, message.message)
+        case .success(let id):
+            if call.name == BashToolSchema.getOutputToolName {
+                guard let report = bashExecutor.output(id: id) else {
+                    return .failure(call.id, "No task named \(id) is registered.")
+                }
+                return AIToolResult(callID: call.id, content: report, isError: false)
+            }
+            // kill_task: a companion can never name a process outside its own registry.
+            guard let report = bashExecutor.kill(id: id) else {
+                return .failure(call.id, "No task named \(id) is registered.")
+            }
+            return AIToolResult(callID: call.id, content: report, isError: false)
+        }
+    }
+
+    /// Escape refuses this one call; only this row in Settings can stand `.always` down.
+    private func permitBash(_ command: String, in chat: UUID, isBackground: Bool) async -> Bool {
+        switch MCPTrustPolicy.decide(
+            trust: core.aiSettings.bashTrust, isGrantedForChat: bashGrants.contains(chat))
+        {
+        case .allow: return true
+        case .refuse: return false
+        case .ask: break
+        }
+        let shown =
+            command.count > 800
+            ? String(command.prefix(800)) + "…" : command
+        let choices: [MCPTrustChoice] = [.always, .thisChat, .refuse]
+        let index = await core.choose(
+            title: isBackground ? "Start this command in the background?" : "Run this command?",
+            message: "\(shown)",
+            symbol: "terminal",
+            options: [
+                DialogAction(title: "Always Allow"),
+                DialogAction(title: "Allow This Chat"),
+                DialogAction(title: "Don't Allow", role: .cancel),
+            ],
+            defaultIndex: 1)
+        switch choices.indices.contains(index) ? choices[index] : .refuse {
+        case .always:
+            core.aiSettings.bashTrust = .always
+            return true
+        case .thisChat:
+            bashGrants.insert(chat)
+            return true
+        case .refuse:
+            return false
         }
     }
 
@@ -331,12 +426,30 @@ final class AIChatCoordinator {
     private func tools(for chat: AIChatState, scopedTo slug: String?) -> [AITool] {
         guard chat.toolScope.isEnabled else { return [] }
         let excluded = chat.toolScope.excluded
-        return core.mcpCoordinator.tools(scopedTo: slug).filter { tool in
+        var armed = core.mcpCoordinator.tools(scopedTo: slug).filter { tool in
             guard let route = MCPToolName.parse(tool.name) else { return true }
             return !excluded.contains(route.slug)
         }
+        // Armed on API routes only, at large or narrowed to it; a named server says otherwise.
+        if core.aiSettings.bashToolEnabled, !excluded.contains(BashToolSchema.slug),
+            slug == nil
+        {
+            armed.append(contentsOf: BashToolSchema.tools)
+        }
+        return armed
     }
 
+    /// Off means fully off: the registry and its children go, and no chat grant survives.
+    func setBashToolEnabled(_ enabled: Bool) {
+        core.aiSettings.bashToolEnabled = enabled
+        if !enabled {
+            bashExecutor.stopAll()
+            bashGrants = []
+        }
+    }
+
+    /// Whether the menu shows the built-in's row at all: a tool no one turned on is less.
+    var isBashToolArmed: Bool { core.aiSettings.bashToolEnabled }
     /// The servers a chat's tools menu offers; empty when MCP is off or nothing is set up.
     var mcpServers: [MCPServer] { core.mcpCoordinator.servers }
 

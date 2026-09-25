@@ -320,9 +320,11 @@ private struct AIToolsPicker: View {
         let servers = coordinator.mcpServers
         let scope = chat.toolScope
         let takesTools = coordinator.capabilities(for: chat).tools
-        let active = servers.filter { scope.allows($0.slug) }.count
+        let bash = coordinator.isBashToolArmed
+        let offered = servers.count + (bash ? 1 : 0)
+        let active = servers.filter { scope.allows($0.slug) }.count + (bash && scope.allows("bash") ? 1 : 0)
         Menu {
-            if servers.isEmpty {
+            if offered == 0 {
                 Text("No MCP servers are connected")
             } else {
                 Toggle(
@@ -330,6 +332,15 @@ private struct AIToolsPicker: View {
                     isOn: Binding(
                         get: { scope.isEnabled },
                         set: { coordinator.setToolsEnabled($0, in: chat) }))
+                if bash {
+                    Toggle(
+                        "Bash",
+                        isOn: Binding(
+                            get: { scope.allows("bash") },
+                            set: { _ in coordinator.toggleToolServer("bash", in: chat) }))
+                        .disabled(!scope.isEnabled)
+                }
+            if !servers.isEmpty {
                 Section("Servers") {
                     ForEach(servers) { server in
                         Toggle(
@@ -342,11 +353,12 @@ private struct AIToolsPicker: View {
                     }
                 }
             }
+            }
             Divider()
             Button("MCP Settings…", action: coordinator.showMCPSettings)
         } label: {
             Label(
-                servers.isEmpty || !scope.isEnabled ? "Tools" : "\(active) of \(servers.count)",
+                offered == 0 || !scope.isEnabled ? "Tools" : "\(active) of \(offered)",
                 systemImage: "wrench.and.screwdriver"
             )
             .labelStyle(.titleAndIcon)

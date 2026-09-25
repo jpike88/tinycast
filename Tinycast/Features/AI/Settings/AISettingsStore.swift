@@ -39,6 +39,14 @@ final class AISettingsStore {
     var webSearchEnabled: Bool {
         didSet { defaults.set(webSearchEnabled, forKey: AppSettingsKey.aiWebSearch.rawValue) }
     }
+    /// Off by default, never backed up: arming a shell is a consent this Mac grants in person.
+    var bashToolEnabled: Bool {
+        didSet { defaults.set(bashToolEnabled, forKey: AppSettingsKey.aiBashToolEnabled.rawValue) }
+    }
+    /// Same `MCPTrust` ladder the servers use; `never` here is the Settings-only safe answer.
+    var bashTrust: MCPTrust {
+        didSet { defaults.set(bashTrust.rawValue, forKey: AppSettingsKey.aiBashTrust.rawValue) }
+    }
     /// Appended to `AIInstructions.preamble` on every turn, so it is billed on every turn.
     var systemPrompt: String {
         didSet { defaults.set(systemPrompt, forKey: AppSettingsKey.aiSystemPrompt.rawValue) }
@@ -90,6 +98,11 @@ final class AISettingsStore {
         defaultModels = Self.decodeDefaultModels(defaults)
         webSearchEnabled =
             defaults.object(forKey: AppSettingsKey.aiWebSearch.rawValue) as? Bool ?? false
+        bashToolEnabled =
+            defaults.object(forKey: AppSettingsKey.aiBashToolEnabled.rawValue) as? Bool ?? false
+        bashTrust =
+            MCPTrust(rawValue: defaults.string(forKey: AppSettingsKey.aiBashTrust.rawValue) ?? "")
+            ?? .ask
         systemPrompt = defaults.string(forKey: AppSettingsKey.aiSystemPrompt.rawValue) ?? ""
         systemPromptEnabled =
             defaults.object(forKey: AppSettingsKey.aiSystemPromptEnabled.rawValue) as? Bool ?? true

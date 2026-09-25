@@ -497,6 +497,7 @@ final class AppCore {
         mcpOAuth.stop()
         mcp.stop()
         installedAI.stop()
+        aiChatCoordinator.prepareForTermination()
     }
 
     @discardableResult

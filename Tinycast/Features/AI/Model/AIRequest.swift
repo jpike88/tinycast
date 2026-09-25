@@ -149,7 +149,7 @@ enum AIStreamEvent: Equatable, Sendable {
     /// What a transport emits; the loop consumes it and never passes it on to the transcript.
     case toolCallRequested(AIToolCall)
     /// What the loop emits in its place, already carrying what a row has to show.
-    case toolCall(id: String, origin: String, title: String)
+    case toolCall(id: String, origin: String, title: String, detail: String?)
     case toolResult(id: String, isError: Bool)
     case usage(AIUsage)
     case finished
