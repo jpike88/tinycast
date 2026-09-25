@@ -509,7 +509,9 @@ run updates-test           Tinycast/Features/Updates/Model/*.swift \
 run support-test           Tinycast/Features/Support/Model/*.swift
 run ai-provider-test       Tinycast/Features/Settings/AppSettingsKey.swift \
                            Tinycast/Features/AI/Model/*.swift \
-                           Tinycast/Features/AI/Settings/AISettingsStore.swift
+                           Tinycast/Features/AI/Settings/AISettingsStore.swift \
+                           Tinycast/Features/MCP/Model/MCPServer.swift \
+                           Tinycast/Features/MCP/Model/MCPTrustPolicy.swift
 run ai-chat-test           Tinycast/Features/AI/Model/AIRequest.swift \
                            Tinycast/Features/AI/Model/AIConnection.swift \
                            Tinycast/Features/AI/Model/AppleIntelligence.swift \
@@ -547,6 +549,10 @@ run chat-markdown-test     Tinycast/Platform/Appearance.swift \
                            Tinycast/Features/AI/Model/MarkdownBlock.swift \
                            Tinycast/Features/AI/UI/ChatTextHighlight.swift \
                            Tinycast/Features/AI/UI/ChatMarkdownRenderer.swift
+run bash-tool-test         Tinycast/Features/AI/Model/AITool.swift \
+                           Tinycast/Features/AI/Model/JSONValue.swift \
+                           Tinycast/Features/AI/Model/BashToolSchema.swift \
+                           Tinycast/Features/AI/Service/BashToolExecutor.swift
 run mcp-test               Tinycast/Features/Settings/AppSettingsKey.swift \
                            Tinycast/Features/AI/Model/AIConnection.swift \
                            Tinycast/Features/AI/Model/AppleIntelligence.swift \
