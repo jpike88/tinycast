@@ -286,6 +286,29 @@ final class AIChatCoordinator {
         core.aiSettings.webSearchEnabled && capabilities(for: chat).webSearch
     }
 
+    /// Whether a prompt may reach a search engine at all: natively, or through the built-in tool.
+    func searchIsReachable(in chat: AIChatState) -> Bool {
+        let can = capabilities(for: chat)
+        guard core.aiSettings.webSearchEnabled else { return false }
+        return can.webSearch || searchTool(for: chat) != nil
+    }
+
+    /// Whether the composer offers the toggle: routes with native search, plus every HTTP route
+    /// the tool loop could arm. The three CLIs whose own client runs tools can take none.
+    func searchToggleAvailable(in chat: AIChatState) -> Bool {
+        let can = capabilities(for: chat)
+        if can.webSearch { return true }
+        return can.tools && !(model(for: chat)?.runsItsOwnTools == true)
+    }
+
+    /// On a route with no native search, the same toggle arms Tinycast's own `web_search` tool,
+    /// which the loop executes against Brave Search; OpenRouter keeps its own layer.
+    private func searchTool(for chat: AIChatState) -> AITool? {
+        let can = capabilities(for: chat)
+        guard can.tools, !can.webSearch, core.aiSettings.webSearchEnabled else { return nil }
+        return AIWebSearch.tool()
+    }
+
     private var instructions: String? {
         AIInstructions.compose(
             userPrompt: core.aiSettings.systemPrompt,
@@ -317,13 +340,17 @@ final class AIChatCoordinator {
     private func toolAware(
         _ provider: any AIProvider, scopedTo slug: String?, in chat: AIChatState
     ) -> any AIProvider {
-        let tools = tools(for: chat, scopedTo: slug)
+        var tools = tools(for: chat, scopedTo: slug)
+        if let searchTool = searchTool(for: chat) { tools.insert(searchTool, at: 0) }
         guard capabilities(for: chat).tools, !tools.isEmpty else { return provider }
         let chatID = chat.session.id
         return AIToolLoopProvider(
             base: provider, tools: tools, maxRounds: core.aiSettings.toolRounds.limit
         ) { [mcp = core.mcpCoordinator] call in
-            await mcp.invoke(call, in: chatID)
+            if AIWebSearch.isBuiltIn(call.name) {
+                return await BraveSearchService.invoke(call)
+            }
+            return await mcp.invoke(call, in: chatID)
         }
     }
 
@@ -404,7 +431,7 @@ final class AIChatCoordinator {
             stagedBytes: chat.pendingAttachments.reduce(0) { $0 + $1.payload.byteCount },
             usage: chat.usage,
             systemPrompt: core.aiSettings.systemPromptEnabled,
-            webSearch: core.aiSettings.webSearchEnabled && can.webSearch,
+            webSearch: searchIsReachable(in: chat),
             toolServers: can.tools && scope.isEnabled
                 ? mcpServers.count { scope.allows($0.slug) } : 0)
     }

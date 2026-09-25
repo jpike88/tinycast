@@ -629,8 +629,8 @@ transport code at all.
 | OpenCode command | never | never | never | the global config still loads — `permission: deny` refuses the call |
 | Cursor command | never | never | never | the global config still loads — ask mode and withheld approval refuse the call |
 | OpenRouter | `plugins: [{id: "web"}]` — OpenRouter's own layer, any model | `image_url` part, only for models whose catalog lists the `image` modality | never yet — its catalog publishes a `file` modality Tinycast does not read | `tools` + `role: "tool"` turns |
-| OpenAI | not offered | `image_url` part, assumed supported | `file` part with `filename` and a `file_data` data URL | `tools` + `role: "tool"` turns |
-| Gemini / compatible | not offered | `image_url` part, assumed supported | never — a gateway that has not implemented the part bills the upload before rejecting it | `tools` + `role: "tool"` turns |
+| OpenAI | a `web_search` tool call on the loop — Brave Search reads `Settings` for its key | `image_url` part, assumed supported | `file` part with `filename` and a `file_data` data URL | `tools` + `role: "tool"` turns |
+| Gemini / compatible | a `web_search` tool call on the loop — Brave Search reads `Settings` for its key | `image_url` part, assumed supported | never — a gateway that has not implemented the part bills the upload before rejecting it | `tools` + `role: "tool"` turns |
 | Anthropic | not offered | base64 `image` block | base64 `document` block, ahead of the text block | `tools` + `tool_use` / `tool_result` blocks |
 
 A search is part of the reply, not a status: `item/started` for a `webSearch` item appends a
@@ -651,6 +651,20 @@ doesn't simply returns the provider's error.
 Web search is a Settings → AI toggle, `aiWebSearch`, off by default: a prompt reaches a search engine
 only once the user has opted in.
 It's still excluded from backups — which Mac may send prompts to a search engine is that Mac's call.
+A route without native search of its own is not a route without web search: the same toggle arms
+Tinycast's built-in `web_search` tool on HTTP routes that call tools — the `AIToolLoopProvider`'s
+tool list leads with it, and its calls execute against **Brave Search**
+(`api.search.brave.com/res/v1/web/search`) instead of the MCP path.
+`AIWebSearch` is pure Model: the endpoint (one query, one page of results), the numbered
+title/link/snippet text the model reads, and the failure messages are pinned by `ai-web-search-test`.
+`BraveSearchService` is the one caller: a private `.ephemeral`, `urlCache = nil` session, GET with
+`X-Subscription-Token`, so Brave holds no copy on disk but its own response. The key lives in
+Keychain under the fixed `AIWebSearch.keyAccount` account in the `ai-api-keys` scope — one field,
+from the free plan at api-dashboard.search.brave.com. It is excluded from backups like the toggle — which Mac may
+search is that Mac's call. A tool call the loop yields
+shows in the transcript as a tool row under origin “Tinycast”; an unconfigured or failing engine
+does not end the turn — it is a tool *result the model reads* (the endpoint's own error message, or
+the Settings pointer) and routes around.
 Nothing *guesses* at a capability: images ride on what the model's own catalog said, and a vendor
 API that does not take one simply returns its error. What is gated is only what a route provably
 cannot carry — a PDF to a text transport — refused at the composer with a HUD naming the reason.

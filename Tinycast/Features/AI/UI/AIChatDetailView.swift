@@ -177,7 +177,7 @@ private struct AIChatComposer: View {
             AIModelPicker(chat: chat, selected: coordinator.model(for: chat), coordinator: coordinator)
             AIReasoningPicker(chat: chat, coordinator: coordinator)
             AIToolsPicker(chat: chat, coordinator: coordinator)
-            if coordinator.capabilities(for: chat).webSearch {
+            if coordinator.searchToggleAvailable(in: chat) {
                 WebSearchToggle(settings: settings)
             }
             Spacer(minLength: 0)
