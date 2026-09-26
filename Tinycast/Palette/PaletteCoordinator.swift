@@ -54,7 +54,10 @@ final class PaletteCoordinator {
     }
 
     func togglePalette() {
+        // Quick AI's screens hold a conversation; the reset a launcher swap implies is a dismissal.
         if isShowing(.launcher) {
+            hidePalette()
+        } else if windowController.isVisible, palette.mode == .ai || palette.mode == .aiHistory {
             hidePalette()
         } else {
             showPalette(mode: .launcher, restoreAnyMode: true)

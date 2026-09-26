@@ -56,7 +56,8 @@ bottom with the model picker. ⌘J hands a Quick AI conversation to the window.
   never silently selects a networked model.
 - **Every chat keeps its own model.** `ChatSession.model` is stamped on the first send and changed by
   either surface's picker; `conversation_details` stores it, so reopening a chat reopens its model and
-  effort. A pick also moves the app default, which is only what a *new* chat starts on. A chat whose
+  effort. A pick also moves that surface's default — Quick AI and AI Chat each store their own in
+  Settings → AI, so a pick in one never moves what a new chat on the other starts on. A chat whose
   route was removed in Settings answers on the default rather than failing
   (`AIChatCoordinator.model(for:)`), and keeps its stored pick in case the route comes back.
 - **Reasoning is shown, folded, and never resent.** `AIStreamEvent.reasoning` carries the text a route
@@ -631,8 +632,8 @@ transport code at all.
 | OpenCode command | never | never | never | the global config still loads — `permission: deny` refuses the call |
 | Cursor command | never | never | never | the global config still loads — ask mode and withheld approval refuse the call |
 | OpenRouter | `plugins: [{id: "web"}]` — OpenRouter's own layer, any model | `image_url` part, only for models whose catalog lists the `image` modality | never yet — its catalog publishes a `file` modality Tinycast does not read | `tools` + `role: "tool"` turns |
-| OpenAI | not offered | `image_url` part, assumed supported | `file` part with `filename` and a `file_data` data URL | `tools` + `role: "tool"` turns |
-| Gemini / compatible | not offered | `image_url` part, assumed supported | never — a gateway that has not implemented the part bills the upload before rejecting it | `tools` + `role: "tool"` turns |
+| OpenAI | a `web_search` tool call on the loop — Brave Search reads `Settings` for its key | `image_url` part, assumed supported | `file` part with `filename` and a `file_data` data URL | `tools` + `role: "tool"` turns |
+| Gemini / compatible | a `web_search` tool call on the loop — Brave Search reads `Settings` for its key | `image_url` part, assumed supported | never — a gateway that has not implemented the part bills the upload before rejecting it | `tools` + `role: "tool"` turns |
 | Anthropic | not offered | base64 `image` block | base64 `document` block, ahead of the text block | `tools` + `tool_use` / `tool_result` blocks |
 
 A search is part of the reply, not a status: `item/started` for a `webSearch` item appends a
@@ -653,6 +654,20 @@ doesn't simply returns the provider's error.
 Web search is a Settings → AI toggle, `aiWebSearch`, off by default: a prompt reaches a search engine
 only once the user has opted in.
 It's still excluded from backups — which Mac may send prompts to a search engine is that Mac's call.
+A route without native search of its own is not a route without web search: the same toggle arms
+Tinycast's built-in `web_search` tool on HTTP routes that call tools — the `AIToolLoopProvider`'s
+tool list leads with it, and its calls execute against **Brave Search**
+(`api.search.brave.com/res/v1/web/search`) instead of the MCP path.
+`AIWebSearch` is pure Model: the endpoint (one query, one page of results), the numbered
+title/link/snippet text the model reads, and the failure messages are pinned by `ai-web-search-test`.
+`BraveSearchService` is the one caller: a private `.ephemeral`, `urlCache = nil` session, GET with
+`X-Subscription-Token`, so Brave holds no copy on disk but its own response. The key lives in
+Keychain under the fixed `AIWebSearch.keyAccount` account in the `ai-api-keys` scope — one field,
+from the free plan at api-dashboard.search.brave.com. It is excluded from backups like the toggle — which Mac may
+search is that Mac's call. A tool call the loop yields
+shows in the transcript as a tool row under origin “Tinycast”; an unconfigured or failing engine
+does not end the turn — it is a tool *result the model reads* (the endpoint's own error message, or
+the Settings pointer) and routes around.
 Nothing *guesses* at a capability: images ride on what the model's own catalog said, and a vendor
 API that does not take one simply returns its error. What is gated is only what a route provably
 cannot carry — a PDF to a text transport — refused at the composer with a HUD naming the reason.
@@ -737,12 +752,13 @@ width and clipped the search field well short of the button.
 
 Settings → AI is a normal grouped `Form` inside Tinycast's existing Settings window. Its top AI
 section owns the feature switch and the **Providers → Manage…** action, and **Default model** below
-it picks the app-wide route and its reasoning effort. Provider management opens as a sheet, where
+it holds a pick and its reasoning effort for each surface — **Quick AI model** and **AI Chat model**.
+Provider management opens as a sheet, where
 **Installed AI** reports Codex, Claude, Grok, OpenCode and Cursor separately as checking, ready, sign-in required,
 missing or failed. It never contains a credential field: installation and sign-in happen in each
 command's own flow. **API Connections** remains the explicit Keychain-backed path in that sheet. A
-pick in Quick AI's header or the AI Chat composer sets that chat's model and moves this default with
-it, while Quick Actions keeps its own model selection.
+pick in Quick AI's header or the AI Chat composer sets that chat's model and moves that surface's
+default with it, while Quick Actions keeps its own model selection.
 
 The signed-in Codex address is the one thing on the pane that names a person, and a Settings pane
 is what gets screenshotted into a bug report or left on screen in a recording, so `RedactedText`

@@ -107,9 +107,59 @@ struct AIProviderTests {
         codexElicitationsAreOnlyToolCalls()
         claudeControlFramesAnswerOneTool()
         aGatewayOffersNoneAsItsReasoningEffort()
+        thinkingTagsFoldIntoReasoning()
+        aMidReplyTagStillClosesTheFold()
 
         print("\(passes) passed, \(failures) failed")
         if failures > 0 { exit(1) }
+    }
+
+    /// some models insert thinking tags in the content; they should fold like a reasoning field.
+    static func thinkingTagsFoldIntoReasoning() {
+        var decoder = AIStreamDecoder(shape: .openAICompatible)
+        var events: [AIStreamEvent] = []
+        for chunk in [
+            #"{"choices":[{"delta":{"content":"<thi"}}]}"#,
+            #"{"choices":[{"delta":{"content":"nk>\nReason."}}]}"#,
+            #"{"choices":[{"delta":{"content":" Hard."}}]}"#,
+            #"{"choices":[{"delta":{"content":"</"}}]}"#,
+            #"{"choices":[{"delta":{"content":"think>\nThe answer"}}]}"#,
+            "[DONE]",
+        ] {
+            events += (try? decoder.feed(Data(("data: " + chunk + "\n\n").utf8))) ?? []
+        }
+        events += (try? decoder.finish()) ?? []
+        expect(
+            events.contains(.thinking) && events.contains(.reasoning("Reason.")),
+            "inline thinking tags open the reasoning fold, never the answer text")
+        expect(
+            events.contains(.reasoning(" Hard.")) && events.contains(.text("The answer")),
+            "thinking continues across chunks and the answer resumes after the closing tag")
+        expect(
+            !events.contains { if case .text(let text) = $0 { return text.contains("<") } else { return false } },
+            "no tag fragment leaks into the answer text")
+        expect(events.last == .finished, "the stream still terminates")
+    }
+
+    /// The gateway's deltas carried the closing tag mid-content after thinking prose.
+    static func aMidReplyTagStillClosesTheFold() {
+        var decoder = AIStreamDecoder(shape: .openAICompatible)
+        var events: [AIStreamEvent] = []
+        for chunk in [
+            #"{"choices":[{"delta":{"content":"open"}}]}"#,
+            #"{"choices":[{"delta":{"content":"\u003Cthink>"}}]}"#,
+            #"{"choices":[{"delta":{"content":"inside\u003C/think> after"}}]}"#,
+            "[DONE]",
+        ] {
+            events += (try? decoder.feed(Data(("data: " + chunk + "\n\n").utf8))) ?? []
+        }
+        events += (try? decoder.finish()) ?? []
+        expect(events.contains(.text("open")), "text before the tag is answer text")
+        expect(
+            events.contains(.thinking) && events.contains(.reasoning("inside")),
+            "the tag opens the reasoning fold mid-reply")
+        expect(events.contains(.text("after")), "the closing tag mid-delta resumes the answer")
+        expect(events.last == .finished, "the stream still terminates")
     }
 
     /// Both providers stream a call's arguments in pieces; a half-parsed call would be uncallable.
@@ -882,26 +932,35 @@ struct AIProviderTests {
 
         let store = AISettingsStore(defaults: defaults, isAppleIntelligenceAvailable: { true })
         expect(
-            store.defaultModel == .appleIntelligence,
-            "the on-device route is the default on an unconfigured Mac")
+            store.defaultModel == .appleIntelligence
+                && store.quickAIDefaultModel == .appleIntelligence,
+            "the on-device route is the default on an unconfigured Mac, per surface")
 
         // A configured connection must not be displaced by resolution running a second time.
         let connectionID = UUID()
         store.save(AIConnection(id: connectionID, name: "Local", models: ["m"]))
-        store.select(.api(connection: connectionID, model: "m", effort: nil))
-        store.resolveDefaultModel()
+        store.select(.api(connection: connectionID, model: "m", effort: nil), surface: .chat)
+        store.resolveDefaultModels()
         expect(
             store.defaultModel == .api(connection: connectionID, model: "m", effort: nil),
             "resolution never overrides a selection the reader made")
 
+        // A pick in one surface never moves the other surface's default.
+        store.select(.codex(model: "gpt", effort: nil), surface: .quickAI)
+        expect(
+            store.quickAIDefaultModel == .codex(model: "gpt", effort: nil)
+                && store.defaultModel == .api(connection: connectionID, model: "m", effort: nil),
+            "the two surfaces name their defaults independently")
+
         // A removed connection falls forward to the route that is always configured.
         store.removeConnection(id: connectionID)
         expect(
-            store.defaultModel == .appleIntelligence,
-            "a removed connection falls forward to the on-device route")
+            store.defaultModel == .appleIntelligence
+                && store.quickAIDefaultModel == .codex(model: "gpt", effort: nil),
+            "a removed connection falls forward to the on-device route, per surface")
 
         let without = AISettingsStore(defaults: defaults, isAppleIntelligenceAvailable: { false })
-        without.resolveDefaultModel()
+        without.resolveDefaultModels()
         expect(
             without.defaultModel == .appleIntelligence,
             "an unavailable model does not silently reroute a stored on-device selection")
@@ -932,7 +991,7 @@ struct AIProviderTests {
         expect(
             store.defaultModel == .api(connection: firstID, model: "model-a", effort: nil),
             "the first saved model becomes the default")
-        store.select(.api(connection: firstID, model: "model-b", effort: "low"))
+        store.select(.api(connection: firstID, model: "model-b", effort: "low"), surface: .chat)
 
         let reopened = AISettingsStore(defaults: defaults)
         expect(reopened.connections == store.connections, "connection metadata survives a restart")
@@ -974,7 +1033,7 @@ struct AIProviderTests {
             efforts: [
                 .init(id: "low", detail: nil), .init(id: "high", detail: nil)
             ], defaultEffort: "high", isDefault: true)
-        store.select(.codex(model: "gpt", effort: "missing"))
+        store.select(.codex(model: "gpt", effort: "missing"), surface: .chat)
         store.reconcile(codexModels: [model], isUnavailable: false)
         expect(
             store.defaultModel == .codex(model: "gpt", effort: "high"),
@@ -982,7 +1041,7 @@ struct AIProviderTests {
         store.reconcile(codexModels: [], isUnavailable: true)
         expect(store.defaultModel == nil, "signing out clears an unusable Codex default")
 
-        store.select(.claude(model: "removed", effort: nil))
+        store.select(.claude(model: "removed", effort: nil), surface: .chat)
         store.reconcile(
             installed: .claude,
             models: [InstalledAIModel(id: "sonnet", name: "Claude Sonnet")],

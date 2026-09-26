@@ -1,6 +1,19 @@
 import Foundation
 import Observation
 
+/// Which chat surface a stored default belongs to: Quick AI and AI Chat each name their own.
+enum AIDefaultSurface: CaseIterable, Hashable, Sendable {
+    case quickAI
+    case chat
+
+    var key: AppSettingsKey {
+        switch self {
+        case .quickAI: return .aiQuickAIDefaultModel
+        case .chat: return .aiDefaultModel
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class AISettingsStore {
@@ -9,12 +22,30 @@ final class AISettingsStore {
     private(set) var connections: [AIConnection] {
         didSet { persistConnections() }
     }
-    private(set) var defaultModel: AIModelSelection? {
-        didSet { persistDefaultModel() }
+    private(set) var defaultModels: [AIDefaultSurface: AIModelSelection] {
+        didSet { persistDefaultModels() }
     }
+    var defaultModel: AIModelSelection? {
+        get { defaultModels[.chat] }
+        set { defaultModels[.chat] = newValue }
+    }
+
+    var quickAIDefaultModel: AIModelSelection? {
+        get { defaultModels[.quickAI] }
+        set { defaultModels[.quickAI] = newValue }
+    }
+
     /// Off by default: a prompt reaches a search engine only once the user has said so.
     var webSearchEnabled: Bool {
         didSet { defaults.set(webSearchEnabled, forKey: AppSettingsKey.aiWebSearch.rawValue) }
+    }
+    /// Off by default, never backed up: arming a shell is a consent this Mac grants in person.
+    var bashToolEnabled: Bool {
+        didSet { defaults.set(bashToolEnabled, forKey: AppSettingsKey.aiBashToolEnabled.rawValue) }
+    }
+    /// Same `MCPTrust` ladder the servers use; `never` here is the Settings-only safe answer.
+    var bashTrust: MCPTrust {
+        didSet { defaults.set(bashTrust.rawValue, forKey: AppSettingsKey.aiBashTrust.rawValue) }
     }
     /// Appended to `AIInstructions.preamble` on every turn, so it is billed on every turn.
     var systemPrompt: String {
@@ -64,10 +95,14 @@ final class AISettingsStore {
         self.isAppleIntelligenceAvailable = isAppleIntelligenceAvailable
         connections = Self.decodeConnections(
             defaults.data(forKey: AppSettingsKey.aiConnections.rawValue))
-        defaultModel = Self.decodeDefaultModel(
-            defaults.data(forKey: AppSettingsKey.aiDefaultModel.rawValue))
+        defaultModels = Self.decodeDefaultModels(defaults)
         webSearchEnabled =
             defaults.object(forKey: AppSettingsKey.aiWebSearch.rawValue) as? Bool ?? false
+        bashToolEnabled =
+            defaults.object(forKey: AppSettingsKey.aiBashToolEnabled.rawValue) as? Bool ?? false
+        bashTrust =
+            MCPTrust(rawValue: defaults.string(forKey: AppSettingsKey.aiBashTrust.rawValue) ?? "")
+            ?? .ask
         systemPrompt = defaults.string(forKey: AppSettingsKey.aiSystemPrompt.rawValue) ?? ""
         systemPromptEnabled =
             defaults.object(forKey: AppSettingsKey.aiSystemPromptEnabled.rawValue) as? Bool ?? true
@@ -87,13 +122,15 @@ final class AISettingsStore {
             ?? .twentyFive
         enabledInstalledProviders = Self.decodeEnabledInstalledProviders(
             defaults.data(forKey: AppSettingsKey.aiInstalledProviders.rawValue))
-        if case .api(let connection, let model, _) = defaultModel,
-            !connections.contains(where: { $0.id == connection && $0.models.contains(model) })
-        {
-            defaultModel = firstAvailableSelection()
-        }
-        if defaultModel == nil {
-            defaultModel = firstAvailableSelection()
+        for surface in AIDefaultSurface.allCases {
+            if case .api(let connection, let model, _) = defaultModels[surface],
+                !connections.contains(where: { $0.id == connection && $0.models.contains(model) })
+            {
+                defaultModels[surface] = firstAvailableSelection()
+            }
+            if defaultModels[surface] == nil {
+                defaultModels[surface] = firstAvailableSelection()
+            }
         }
     }
 
@@ -101,11 +138,11 @@ final class AISettingsStore {
         connections.first { $0.id == id }
     }
 
-    func select(_ selection: AIModelSelection) {
+    func select(_ selection: AIModelSelection, surface: AIDefaultSurface) {
         if case .api(let connection, let model, _) = selection {
             guard self.connection(id: connection)?.models.contains(model) == true else { return }
         }
-        defaultModel = selection
+        defaultModels[surface] = selection
     }
 
     func save(_ connection: AIConnection) {
@@ -115,92 +152,104 @@ final class AISettingsStore {
         } else {
             connections.append(connection)
         }
-        if case .api(connection.id, let model, let effort) = defaultModel {
-            if connection.models.contains(model) {
-                defaultModel = .api(
-                    connection: connection.id, model: model,
-                    effort: connection.reasoningOptions(for: model)?.resolvedEffort(effort))
-            } else {
-                defaultModel = connection.models.first.map {
-                    .api(
-                        connection: connection.id, model: $0,
-                        effort: connection.reasoningOptions(for: $0)?.resolvedEffort(nil))
+        for surface in AIDefaultSurface.allCases {
+            if case .api(connection.id, let model, let effort) = defaultModels[surface] {
+                if connection.models.contains(model) {
+                    defaultModels[surface] = .api(
+                        connection: connection.id, model: model,
+                        effort: connection.reasoningOptions(for: model)?.resolvedEffort(effort))
+                } else {
+                    defaultModels[surface] = connection.models.first.map {
+                        .api(
+                            connection: connection.id, model: $0,
+                            effort: connection.reasoningOptions(for: $0)?.resolvedEffort(nil))
+                    }
                 }
             }
-        }
-        if defaultModel == nil, let model = connection.models.first {
-            defaultModel = .api(
-                connection: connection.id, model: model,
-                effort: connection.reasoningOptions(for: model)?.resolvedEffort(nil))
+            if defaultModels[surface] == nil, let model = connection.models.first {
+                defaultModels[surface] = .api(
+                    connection: connection.id, model: model,
+                    effort: connection.reasoningOptions(for: model)?.resolvedEffort(nil))
+            }
         }
     }
 
     func removeConnection(id: UUID) {
         connections.removeAll { $0.id == id }
-        guard case .api(id, _, _) = defaultModel else { return }
-        defaultModel = firstAvailableSelection()
+        for surface in AIDefaultSurface.allCases {
+            guard case .api(id, _, _) = defaultModels[surface] else { continue }
+            defaultModels[surface] = firstAvailableSelection()
+        }
     }
 
     func reconcile(codexModels models: [ChatGPTSubscription.Model], isUnavailable: Bool) {
-        guard case .codex(let model, let effort) = defaultModel else { return }
-        if isUnavailable {
-            defaultModel = firstAvailableSelection()
-            return
+        for surface in AIDefaultSurface.allCases {
+            guard case .codex(let model, let effort) = defaultModels[surface] else { continue }
+            if isUnavailable {
+                defaultModels[surface] = firstAvailableSelection()
+                continue
+            }
+            guard !models.isEmpty else { continue }
+            if let match = models.first(where: { $0.id == model }) {
+                let resolved = match.resolvedEffort(effort)
+                if resolved != effort { defaultModels[surface] = .codex(model: model, effort: resolved) }
+                continue
+            }
+            guard let replacement = models.first(where: \.isDefault) ?? models.first else { continue }
+            defaultModels[surface] = .codex(
+                model: replacement.id, effort: replacement.resolvedEffort(nil))
         }
-        guard !models.isEmpty else { return }
-        if let match = models.first(where: { $0.id == model }) {
-            let resolved = match.resolvedEffort(effort)
-            if resolved != effort { defaultModel = .codex(model: model, effort: resolved) }
-            return
-        }
-        guard let replacement = models.first(where: \.isDefault) ?? models.first else { return }
-        defaultModel = .codex(
-            model: replacement.id, effort: replacement.resolvedEffort(nil))
     }
 
     func reconcile(
         installed kind: InstalledAIKind, models: [InstalledAIModel], isUnavailable: Bool
     ) {
-        let selectedModel: String
-        switch (kind, defaultModel) {
-        case (.claude, .claude(let model, _)), (.grok, .grok(let model, _)),
-            (.openCode, .openCode(let model, _)), (.cursor, .cursor(let model, _)):
-            selectedModel = model
-        default:
-            return
-        }
-        if isUnavailable {
-            defaultModel = firstAvailableSelection()
-            return
-        }
-        guard !models.isEmpty else { return }
-        if let match = models.first(where: { $0.id == selectedModel }) {
-            let resolved = match.resolvedEffort(defaultModel?.effort)
-            if resolved != defaultModel?.effort { defaultModel = defaultModel?.withEffort(resolved) }
-            return
-        }
-        guard let replacement = models.first else { return }
-        switch kind {
-        case .claude:
-            defaultModel = .claude(
-                model: replacement.id, effort: replacement.resolvedEffort(nil))
-        case .grok:
-            defaultModel = .grok(
-                model: replacement.id, effort: replacement.resolvedEffort(nil))
-        case .openCode:
-            defaultModel = .openCode(
-                model: replacement.id, effort: replacement.resolvedEffort(nil))
-        case .cursor:
-            defaultModel = .cursor(
-                model: replacement.id, effort: replacement.resolvedEffort(nil))
-        case .codex: break
+        for surface in AIDefaultSurface.allCases {
+            let selectedModel: String
+            switch (kind, defaultModels[surface]) {
+            case (.claude, .claude(let model, _)), (.grok, .grok(let model, _)),
+                (.openCode, .openCode(let model, _)), (.cursor, .cursor(let model, _)):
+                selectedModel = model
+            default:
+                continue
+            }
+            if isUnavailable {
+                defaultModels[surface] = firstAvailableSelection()
+                continue
+            }
+            guard !models.isEmpty else { continue }
+            if let match = models.first(where: { $0.id == selectedModel }) {
+                let resolved = match.resolvedEffort(defaultModels[surface]?.effort)
+                if resolved != defaultModels[surface]?.effort {
+                    defaultModels[surface] = defaultModels[surface]?.withEffort(resolved)
+                }
+                continue
+            }
+            guard let replacement = models.first else { continue }
+            switch kind {
+            case .claude:
+                defaultModels[surface] = .claude(
+                    model: replacement.id, effort: replacement.resolvedEffort(nil))
+            case .grok:
+                defaultModels[surface] = .grok(
+                    model: replacement.id, effort: replacement.resolvedEffort(nil))
+            case .openCode:
+                defaultModels[surface] = .openCode(
+                    model: replacement.id, effort: replacement.resolvedEffort(nil))
+            case .cursor:
+                defaultModels[surface] = .cursor(
+                    model: replacement.id, effort: replacement.resolvedEffort(nil))
+            case .codex: break
+            }
         }
     }
 
     /// Nothing chosen yet takes the route that needs no account, leaving a real stored selection.
-    func resolveDefaultModel() {
-        guard defaultModel == nil, let selection = firstAvailableSelection() else { return }
-        defaultModel = selection
+    func resolveDefaultModels() {
+        for surface in AIDefaultSurface.allCases {
+            guard defaultModels[surface] == nil, let selection = firstAvailableSelection() else { continue }
+            defaultModels[surface] = selection
+        }
     }
 
     func setInstalledProviderEnabled(_ enabled: Bool, for kind: InstalledAIKind) {
@@ -214,16 +263,18 @@ final class AISettingsStore {
     }
 
     func disableInstalledModelSelection(for kind: InstalledAIKind) {
-        guard let source = defaultModel?.source else { return }
-        let matches =
-            switch (kind, source) {
-            case (.codex, .codex), (.claude, .claude), (.grok, .grok), (.openCode, .openCode),
-                (.cursor, .cursor):
-                true
-            default: false
-            }
-        guard matches else { return }
-        defaultModel = firstAvailableSelection()
+        for surface in AIDefaultSurface.allCases {
+            guard let source = defaultModels[surface]?.source else { continue }
+            let matches =
+                switch (kind, source) {
+                case (.codex, .codex), (.claude, .claude), (.grok, .grok), (.openCode, .openCode),
+                    (.cursor, .cursor):
+                    true
+                default: false
+                }
+            guard matches else { continue }
+            defaultModels[surface] = firstAvailableSelection()
+        }
     }
 
     /// The on-device model leads: free, private, always configured, so never a surprising landing.
@@ -244,12 +295,16 @@ final class AISettingsStore {
         defaults.set(data, forKey: AppSettingsKey.aiConnections.rawValue)
     }
 
-    private func persistDefaultModel() {
-        guard let defaultModel, let data = try? JSONEncoder().encode(defaultModel) else {
-            defaults.removeObject(forKey: AppSettingsKey.aiDefaultModel.rawValue)
-            return
+    private func persistDefaultModels() {
+        for surface in AIDefaultSurface.allCases {
+            guard let selection = defaultModels[surface],
+                let data = try? JSONEncoder().encode(selection)
+            else {
+                defaults.removeObject(forKey: surface.key.rawValue)
+                continue
+            }
+            defaults.set(data, forKey: surface.key.rawValue)
         }
-        defaults.set(data, forKey: AppSettingsKey.aiDefaultModel.rawValue)
     }
 
     private func normalized(_ connection: AIConnection) -> AIConnection {
@@ -277,9 +332,15 @@ final class AISettingsStore {
         return connections
     }
 
-    private static func decodeDefaultModel(_ data: Data?) -> AIModelSelection? {
-        guard let data else { return nil }
-        return try? JSONDecoder().decode(AIModelSelection.self, from: data)
+    private static func decodeDefaultModels(
+        _ defaults: UserDefaults
+    ) -> [AIDefaultSurface: AIModelSelection] {
+        var decoded: [AIDefaultSurface: AIModelSelection] = [:]
+        for surface in AIDefaultSurface.allCases {
+            guard let data = defaults.data(forKey: surface.key.rawValue) else { continue }
+            decoded[surface] = try? JSONDecoder().decode(AIModelSelection.self, from: data)
+        }
+        return decoded
     }
 
     private static func decodeEnabledInstalledProviders(_ data: Data?) -> Set<InstalledAIKind> {

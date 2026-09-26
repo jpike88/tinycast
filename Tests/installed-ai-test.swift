@@ -503,7 +503,7 @@ struct InstalledAITests {
             kind: .claude, model: "sonnet", effort: nil,
             toolServers: fixture.session(allowing: true, asked: asked))
         expect(
-            events.contains(.toolCall(id: "toolu_stub", origin: "Probe", title: "safe_echo")),
+            events.contains(.toolCall(id: "toolu_stub", origin: "Probe", title: "safe_echo", detail: nil)),
             "a tool_use block becomes the transcript row the BYOK loop would have written")
         expect(
             events.contains(.toolResult(id: "toolu_stub", isError: false)),
