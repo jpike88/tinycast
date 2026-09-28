@@ -216,7 +216,8 @@ bottom with the model picker. ⌘J hands a Quick AI conversation to the window.
   pasted-but-unsent attachment as resident state: `Recent Conversation` will not open a saved chat
   over one, and `A New Conversation` resets only a chat that actually has messages, since an empty
   chat is already new and resetting it would drop the file for nothing. A file cost a read and a
-  decode, which is not the same as a half-typed line — that is still dropped by `prepare`.
+  decode, which is not the same as a half-typed line — escaping out of an AI screen empties the
+  composer at `hidePalette`, so a re-summon inside the pop-to-root window never reinstates it.
   ⌘J carries them into the window with the conversation; opening another chat there still disowns
   a state's own, which is the rule they belong to.
 - **`AIConversationOpenPolicy` is the whole rule, and it is pure.** `Recent Conversation` resumes the

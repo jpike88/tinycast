@@ -120,6 +120,9 @@ final class PaletteCoordinator {
     }
 
     func hidePalette(restoreFocus: Bool = true) {
+        // An AI draft is unsent chat, not a carried search; escaping out empties the composer, so
+        // even a re-summon within the pop-to-root window never reinstates the typed line.
+        if palette.mode == .ai || palette.mode == .aiHistory { palette.query = "" }
         fileSearch.cancel()
         menuSearch.reset()
         windowSwitch.reset()
