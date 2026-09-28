@@ -185,7 +185,7 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
             popToRoot()
             return
         }
-        let interval = timeout == .immediately ? 5.0 : timeout.interval
+        let interval = timeout == .immediately ? 10.0 : timeout.interval
         popToRootTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) {
             [weak self] _ in
             MainActor.assumeIsolated {
