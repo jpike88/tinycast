@@ -50,7 +50,7 @@ final class QuickAICoordinator {
 
     /// Off leaves the screen too, so the palette never shows a feature that is gone.
     func leave() {
-        if palette.mode == .ai || palette.mode == .aiHistory { palette.prepare(mode: .launcher) }
+        if palette.mode.isAI { palette.prepare(mode: .launcher) }
     }
 
     /// A file pasted at the launcher belongs in Quick AI, never in a search for its name.

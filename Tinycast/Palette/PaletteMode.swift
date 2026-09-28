@@ -23,6 +23,9 @@ enum PaletteMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// The chat screens' search field is a draft, which is why hiding and leaving never restore it.
+    var isAI: Bool { self == .ai || self == .aiHistory }
+
     var systemImage: String {
         switch self {
         case .launcher: return "magnifyingglass"

@@ -73,8 +73,8 @@ struct PaletteNavigationTests {
             nested.pop() && nested.mode == .ai && nested.query == "why is the sky blue",
             "history returns to the chat draft it was opened over")
         expect(
-            nested.pop() && nested.mode == .launcher && nested.query == "clipboard",
-            "and chat returns to the search that found it")
+            nested.pop() && nested.mode == .launcher && nested.query.isEmpty,
+            "and chat leaves its draft behind: the launcher it rests over opens empty")
 
         // `replace` is for a screen swapping its own contents, which is not a step of its own.
         let replaced = searchingLauncher()

@@ -57,7 +57,7 @@ final class PaletteCoordinator {
         // Quick AI's screens hold a conversation; the reset a launcher swap implies is a dismissal.
         if isShowing(.launcher) {
             hidePalette()
-        } else if windowController.isVisible, palette.mode == .ai || palette.mode == .aiHistory {
+        } else if windowController.isVisible, palette.mode.isAI {
             hidePalette()
         } else {
             showPalette(mode: .launcher, restoreAnyMode: true)
@@ -94,6 +94,8 @@ final class PaletteCoordinator {
         if query != nil || !(restoring || alreadyFresh) {
             navigate(to: mode)
         }
+        // A re-presented chat takes the empty composer its dismissal left; seeding writes after it.
+        if restoring { palette.dropAIDraft() }
         if let query { palette.query = query }
         // Before the show: `targetApp` must still name the app in front, and no row may pop in.
         onScreenOpening?(palette.mode)
@@ -120,9 +122,9 @@ final class PaletteCoordinator {
     }
 
     func hidePalette(restoreFocus: Bool = true) {
-        // An AI draft is unsent chat, not a carried search; escaping out empties the composer, so
-        // even a re-summon within the pop-to-root window never reinstates the typed line.
-        if palette.mode == .ai || palette.mode == .aiHistory { palette.query = "" }
+        // An AI draft is unsent chat, not a carried search: a re-summon inside the pop-to-root
+        // window takes the composer empty, whatever a stray field-editor commit left behind.
+        palette.dropAIDraft()
         fileSearch.cancel()
         menuSearch.reset()
         windowSwitch.reset()
