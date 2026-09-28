@@ -79,6 +79,13 @@ A chord aimed at the selected row — ⌃X, ⇧⌘F, ⌘Y and the rest — follo
 `PaletteShortcut` recognises the key and carries its compact-bar and open-menu guards, and the screen
 answers through `perform(_:at:)`, so a new chord never adds a cast to the shell.
 
+Where a reset leaves the highlight is the screen's to say too. Every reset — an open, a new query, a
+new filter — goes through `RootPaletteView.land()`, which reads `landingSelection`, so handlers that
+fire in one update agree whatever order they run in. `onAppear` lands as well: the first show builds
+the view after `prepare` has run, so no change handler ever sees that reset. The landing is row 0 on
+every screen but the clipboard, which lands past its pins
+([clipboard.md](clipboard.md#pinned-entries)).
+
 | Mode | Screen | Inner list |
 | --- | --- | --- |
 | `.launcher` | `LauncherScreen` | `LauncherList` |
@@ -122,8 +129,8 @@ that returning looks like never having left — and offers four motions over it:
 | `pushCarryingQuery(mode:)` | the same step, with the query and row kept: Tab's hop into the ring |
 | `pop()` | restore the screen underneath; `false` when this one is the root |
 
-`pop()` bumps `followToken` rather than `resetToken`: the reset token exists to snap a list to the
-top, which would throw away the very selection being restored.
+`pop()` bumps `followToken` rather than `resetToken`: the reset token exists to land a list afresh,
+which would throw away the very selection being restored.
 
 **Escape clears a non-empty query before it leaves the screen**, so one press clears and the next
 leaves: an extension screen exits itself first (it keeps a stack the palette cannot see), then a
@@ -226,7 +233,7 @@ fact as a parameter, so `palette-placement-test` drives the shipped rules rather
 The panel's width and height are not constants: they come from `InterfaceMetrics`, so Interface Size
 changes them. A change re-enters through `AppCore.track` → `applyInterfaceSize()`, which **drops the
 cached anchor** and re-resolves it — one rule, the summon's. An untouched palette re-centres at the new
-width; a dragged one keeps its stored top-left unless the wider bar no longer leaves
+width; a dragged one keeps its stored horizontal centre unless the wider bar no longer leaves
 `paletteMinimumVisible` on the display it opens on, in which case it falls home.
 
 ### Drag to reposition
@@ -234,8 +241,9 @@ width; a dragged one keeps its stored top-left unless the wider bar no longer le
 **Drag to reposition** (`AppSettings.paletteDraggable`, off by default) is the only thing that moves a
 panel already on screen. `WindowDragHandle` claims mouse-down on the top strip and on the header's
 margins and inter-item gaps (`RootPaletteView.headerGutter`) — everywhere in the header no control
-occupies. The search field is a handle too, but **only while it is empty**: `EmptyFieldDragHandle`
-declines the hit-test outright the moment there is text to select, or marked text being composed.
+occupies. The launcher magnifier is a handle too. The search field is one **only while it is empty**:
+`EmptyFieldDragHandle` declines the hit-test outright the moment there is text to select, or marked
+text being composed.
 Measuring the query and claiming the run past it was the older rule, and it cost the thing a search
 field is for — a selection almost always starts or ends past the last glyph, so every such press moved
 the window instead. A field with a caret in it is being edited; nothing in it is a handle.
@@ -254,33 +262,50 @@ a drag once it passes `DragView.dragSlop`**, and one that never does is reported
 without that, a handle over the empty search field swallowed the click that was meant to put the caret
 back in it. It brackets a real drag with `PaletteCoordinator.beginPaletteDrag()` / `endPaletteDrag()`,
 and the controller holds a `DragSession` for exactly that span. **Only a move inside a session is a user drag**; without that flag every
-programmatic resize would be recorded as one.
+programmatic resize would be recorded as one. Starting that session gives one haptic tick; a click
+without a drag does not.
 
-### The drop guides
+### Drop guides and snapping
 
-While a drag is in flight, `PaletteDropGuideController` puts a click-through borderless panel over the
-display the panel is on, at `.paletteDropGuide`, one level under `.palette`, so it never covers the panel being dragged. It
-draws three dotted lines through the default placement — both panel edges full height, the top edge full
-width — which turn `Theme.Colors.dropGuideArmed` once the anchor is within `Theme.Size.paletteSnapDistance`
-of home. Releasing while armed snaps the panel there.
-
-The guides wait for the first `windowDidMove` of a session rather than appearing on mouse-down, so a
-bare click on a handle never flashes them. Crossing to another display re-points them at that display's
-default placement, which is what a snap would then land on.
+During a drag, `PaletteDropGuideController` shows the original three dotted guides: both edges of
+the default panel placement run vertically across the display, and its top edge runs horizontally.
+Their strokes sit immediately outside the panel frame rather than underneath it.
+They are a visual readout only. `PalettePlacement.snapped` centres the panel when its left edge comes
+within `Theme.Size.paletteSnapDistance` of the centre line, at any height. Once aligned, it stays
+there until dragged twice that distance away. **Only on that line**, the panel also snaps to the
+default top edge or a lower detent that centres the expanded palette vertically. Neither height
+detent extends horizontally beyond the centre-line range. Entry requires a deliberate drag no faster
+than 600pt/s; a quick pass neither snaps nor flashes, while an already held detent keeps its normal
+release range. Entering the line or a height detent gives one system haptic tick. The vertical guides
+briefly turn blue on centre-line alignment; the horizontal guide flashes blue on the home detent,
+or all three when both alignments engage within 6pt of vertical travel.
+Guides appear neutral when a drag starts on an existing alignment; only a new entry flashes.
+The vertical dashes are 8pt with 12pt gaps; the
+horizontal dashes adjust slightly to the panel width so one continuous line leaves the same empty
+gap at both intersections. They fade in after the first move and fade out on release, using the same
+duration as the blue flash. During a drag, the guides stay fully visible for the first 36pt away from
+alignment; moving farther horizontally fades all three, while moving farther vertically fades only
+the horizontal guide. Crossing displays recalculates both the guides and the snap points.
 
 ### Remembering where it was left
 
-A drop that isn't a snap writes the panel's top-left to `AppSettings.palettePositions`, **one entry per
+A drop away from the home detent writes the panel's top-left to `AppSettings.palettePositions`, **one entry per
 display**, keyed by `NSScreen.displayKey` and held **relative to that display's visible top-left**. Per
 display stops a drop made on one screen pulling the palette back there when it is summoned on another;
 relative survives rearranging that display or rescaling it, so no key goes stale.
+Changing Interface Size shifts each saved left edge by half the width difference, preserving the
+launcher's horizontal centre on every display.
 
 **The display is chosen first, by the setting below.** `PalettePlacement.restored` drops the corner once
-that display shows less than `Theme.Size.paletteMinimumVisible` of the compact bar, and snapping onto
-the guides clears that display's entry.
+that display shows less than `Theme.Size.paletteMinimumVisible` of the compact bar. Dropping at the
+home detent clears that display's stored position.
 
-The position is deliberately **not** in a settings backup — it is machine-local geometry, the same
-reason the Settings window autosaves its frame instead ([backup.md](backup.md)).
+The lower expanded-centre detent also records its display separately, so restoring it recomputes
+the centre for the current visible frame and Interface Size instead of reusing an obsolete offset.
+
+The position and its detent are deliberately **not** in a settings backup — they are machine-local
+geometry, the same reason the Settings window autosaves its frame instead
+([backup.md](backup.md)).
 
 Which display the palette anchors to depends on the **Follow the cursor across displays**
 setting (`AppSettings.openOnCursorScreen`, on by default):
@@ -394,8 +419,11 @@ closes the open menu rather than reopening it on that row.
 Every row closes the menu behind it — `activateMenuItem` is the one path, and a row that reorders the
 list under itself (Move Favorite Up/Down) is no exception, so no row ever runs against a rebuilt menu.
 
-`PopoverMenuItem.startsSection` draws a separator with 6pt above and below it. That height joins the
-menu's exact sizing, but the separator takes no selection index, so navigation still walks only rows.
+`PopoverMenuItem.startsSection` draws a separator with the list inset (8pt) above and below it, so a
+row sits as far from it as from the search field's hairline. That height joins the menu's exact
+sizing, but the separator takes no selection index, so navigation still walks only rows. A menu
+taller than its cap ends its viewport mid-row, so the fold never lands on a separator or section
+title, and both hairlines are one device pixel.
 Built-in action menus mark boundaries between opening or copying, managing the item, settings, and
 deletion. Menus offering one kind of action, such as calculator copies, color formats, or emoji
 transfers, keep their rows in one group.
@@ -524,8 +552,11 @@ Panel-owned chords use the same translation directly. A ⌘ chord translates thr
 Command table, so "Dvorak – QWERTY ⌘" keeps giving QWERTY positions while Command is held; a ⌃ chord
 translates without it, since only Command is remapped. A non-ASCII input source or IME therefore
 cannot turn ⌘K into a different logical key, while Dvorak and other ASCII layouts keep their own
-letter positions. No replacement event is synthesized, and unmodified typing stays on the active
-input source and follows the normal composition path.
+letter positions. A key SwiftUI spells in the private-use area — the arrows, and the page, home and
+forward-delete keys — skips the recovery outright: `UCKeyTranslate` answers those keycodes with ASCII
+control characters, which the ASCII test would otherwise accept in place of the key itself, and a
+layout has no letter position to recover for them anyway. No replacement event is synthesized, and
+unmodified typing stays on the active input source and follows the normal composition path.
 
 ## The keyboard belongs to the search field
 

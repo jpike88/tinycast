@@ -75,7 +75,7 @@ outright should not be tacked onto an unrelated conversation.
 ## Choosing a model
 
 **Settings → AI → Providers → Manage…** is where models come from. **Default model** below it picks
-the one chat uses, and its reasoning effort.
+one per surface — Quick AI and the AI Chat window — each with its reasoning effort.
 
 ### Apple Intelligence
 

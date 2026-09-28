@@ -27,6 +27,15 @@ struct ClipboardItem: Identifiable, Hashable, Sendable {
     /// What Paste as Plain Text writes: the text, or a file's path in place of the file.
     var plainText: String? { kind == .image ? nil : text }
 
+    /// Whether Copy Text (⇧⌘T) applies: a captured image, or an image file copied in Finder.
+    var offersTextExtraction: Bool {
+        switch kind {
+        case .image: return imagePath != nil
+        case .file: return filePath.map { ClipboardFileKind.of(path: $0) == .image } ?? false
+        case .text: return false
+        }
+    }
+
     init(text: String, sourceBundleID: String?) {
         self.init(
             id: UUID(), kind: .text, text: text, imagePath: nil, createdAt: Date(),
@@ -553,6 +562,12 @@ final class ClipboardStore {
     func pinnedItem(at index: Int, in query: String, filter: ClipboardFilter) -> ClipboardItem? {
         guard index >= 0 else { return nil }
         return search(query, filter: filter).prefix(while: \.isPinned).dropFirst(index).first
+    }
+
+    /// Where a reset lands: past the pins to the newest clip, or on the first match once typed.
+    func landingIndex(in query: String, filter: ClipboardFilter) -> Int {
+        guard query.trimmingCharacters(in: .whitespaces).isEmpty else { return 0 }
+        return search(query, filter: filter).firstIndex { !$0.isPinned } ?? 0
     }
 
     private func unfiltered(_ q: String, filter: ClipboardFilter) -> [ClipboardItem] {

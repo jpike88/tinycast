@@ -12,6 +12,8 @@ final class ClipboardCoordinator {
     private let paletteCoordinator: PaletteCoordinator
     /// Dialogs, for the one action here that can't be undone.
     private unowned let core: AppCore
+    /// One Copy Text at a time: a newer trigger cancels the helper an older one is waiting on.
+    private var textTask: Task<Void, Never>?
 
     init(
         clipboardStore: ClipboardStore,
@@ -89,7 +91,7 @@ final class ClipboardCoordinator {
     func paste(_ item: ClipboardItem) {
         let previous = windowController.previousApp
         paletteCoordinator.hidePalette(restoreFocus: false)
-        // A write promotes the item, so follow it and keep the moved row highlighted.
+        // A paste promotes the item, so follow it and keep the moved row highlighted.
         if Paster.paste(item, store: clipboardStore, previousApp: previous) {
             selectClip(item)
         } else {
@@ -107,9 +109,7 @@ final class ClipboardCoordinator {
     }
 
     func pasteKeepingWindowOpen(_ item: ClipboardItem) {
-        if windowController.pasteKeepingWindowOpen(item, store: clipboardStore) {
-            selectClip(item)
-        } else {
+        if !windowController.pasteKeepingWindowOpen(item, store: clipboardStore) {
             reportUnavailable(item)
         }
     }
@@ -178,6 +178,37 @@ final class ClipboardCoordinator {
         paletteCoordinator.hidePalette(restoreFocus: false)
         Paster.copyPlainText(path)
         core.showMessage("Copied path")
+    }
+
+    /// ⇧⌘T / “Copy Text” — OCRs the image in the bundled helper and copies what it reads.
+    func copyImageText(_ item: ClipboardItem) {
+        guard let path = item.imagePath ?? item.filePath else { return }
+        paletteCoordinator.hidePalette(restoreFocus: false)
+        core.showProgress("Reading text…")
+        let changeCount = NSPasteboard.general.changeCount
+        textTask?.cancel()
+        textTask = Task {
+            do {
+                // A stat on an unmounted or network volume can stall, so it stays off the main actor.
+                let exists = await Task.detached { FileManager.default.fileExists(atPath: path) }.value
+                try Task.checkCancellation()
+                guard exists else {
+                    return item.kind == .file
+                        ? reportUnavailable(item)
+                        : core.showMessage("That image is no longer available.", tone: .danger)
+                }
+                let text = try await ClipboardTextWorker.extract(item)
+                guard !text.isEmpty else { return core.showMessage("No text found", tone: .neutral) }
+                guard NSPasteboard.general.changeCount == changeCount else {
+                    return core.showMessage("Clipboard changed, text not copied", tone: .neutral)
+                }
+                Paster.copyPlainText(text)
+                core.showMessage("Copied text")
+            } catch is CancellationError {
+            } catch {
+                core.showMessage("Couldn’t read the text", tone: .danger)
+            }
+        }
     }
 
     /// Nil once the file is gone, so every action reports rather than silently no-opping.

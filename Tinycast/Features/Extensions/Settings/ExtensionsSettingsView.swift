@@ -3,6 +3,7 @@ import SwiftUI
 /// Settings › Extensions: the master switch, then a row per extension that expands in place.
 struct ExtensionsSettingsView: View {
     @Environment(AppCore.self) private var core
+    @Environment(SettingsNavigationState.self) private var navigation
     @State private var expanded: String?
     @State private var filter = ""
     @State private var importCandidates: ImportCandidates?
@@ -28,7 +29,8 @@ struct ExtensionsSettingsView: View {
                 isEnabled: Binding(
                     get: { settings.extensionsEnabled },
                     set: { core.extensionCoordinator.setExtensionsEnabled($0) }),
-                showsInLauncher: $settings.extensionsShowInLauncher)
+                showsInLauncher: $settings.extensionsShowInLauncher,
+                showsIcon: true)
 
             Group {
                 install
@@ -46,9 +48,6 @@ struct ExtensionsSettingsView: View {
         // Escape and Return are the keyboard way out of the same field.
         .onExitCommand { NSApp.keyWindow?.makeFirstResponder(nil) }
         .onSubmit { NSApp.keyWindow?.makeFirstResponder(nil) }
-        .onChange(of: settings.extensionsShowInLauncher) {
-            core.extensionCoordinator.applyExtensionsLauncherPresence()
-        }
         // By item: `isPresented` builds the panel from a snapshot taken before the write.
         .settingsEditorPanel(item: $importCandidates) { candidates in
             ExtensionImportPanel(
@@ -65,8 +64,10 @@ struct ExtensionsSettingsView: View {
         .settingsEditorPanel(isPresented: $editingRegistries) {
             ExtensionRegistriesPanel(onClose: { editingRegistries = false })
         }
-        .onReceive(NotificationCenter.default.publisher(for: .tinycastSelectExtension)) { note in
-            if let name = note.object as? String { expanded = name }
+        .onChange(of: navigation.scrollRequest, initial: true) {
+            if case .row(.extensionsInstalled, let name)? = navigation.scrollRequest?.target {
+                (expanded, filter) = (name, "")
+            }
         }
         .onChange(of: core.extensions.installed.count) { Task { await measureReclaimable() } }
         .task {
@@ -80,19 +81,24 @@ struct ExtensionsSettingsView: View {
 
     private var compatibility: some View {
         Section {
-            LabeledContent {
+            SettingsRow(
+                title: "What works",
+                subtitle:
+                    "List, detail, form, grid, no-view and menu-bar commands, plus preferences, storage and OAuth.",
+                subtitleLineLimit: 2
+            ) {
+                ExtensionSettingsIcon(systemName: "checkmark.circle")
+            } trailing: {
                 EmptyView()
-            } label: {
-                Label("What works", systemImage: "checkmark.circle")
-                Text(
-                    "List, detail, form, grid, no-view and menu-bar commands, plus preferences, storage and OAuth."
-                )
             }
-            LabeledContent {
+            SettingsRow(
+                title: "What doesn't, yet",
+                subtitle: "Raycast's OAuth proxy, and its AI, browser and window services.",
+                subtitleLineLimit: 2
+            ) {
+                ExtensionSettingsIcon(systemName: "xmark.circle")
+            } trailing: {
                 EmptyView()
-            } label: {
-                Label("What doesn't, yet", systemImage: "xmark.circle")
-                Text("Raycast's OAuth proxy, and its AI, browser and window services.")
             }
         } header: {
             SettingsSectionHeader(.extensionsCompatibility)
@@ -101,7 +107,6 @@ struct ExtensionsSettingsView: View {
 
     // MARK: - The library
 
-    /// `LauncherItemsSection`'s shape, so a long list reads as a list.
     private var library: some View {
         Section {
             if core.extensions.installed.isEmpty {
@@ -116,24 +121,19 @@ struct ExtensionsSettingsView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
-                    // One row holding a lazy stack: a `Form` realizes every row it is handed.
-                    LazyVStack(spacing: 0) {
-                        ForEach(matching) { installed in
-                            if installed.id != matching.first?.id { Divider() }
-                            ExtensionDisclosure(
-                                installed: installed,
-                                isExpanded: expanded == installed.manifest.name,
-                                onToggle: {
-                                    expanded =
-                                        expanded == installed.manifest.name
-                                        ? nil : installed.manifest.name
-                                },
-                                onUninstall: {
-                                    core.extensionCoordinator.confirmUninstall(installed)
-                                })
-                        }
+                    ForEach(matching) { installed in
+                        ExtensionDisclosure(
+                            installed: installed,
+                            isExpanded: expanded == installed.manifest.name,
+                            onToggle: {
+                                expanded =
+                                    expanded == installed.manifest.name
+                                    ? nil : installed.manifest.name
+                            },
+                            onUninstall: {
+                                core.extensionCoordinator.confirmUninstall(installed)
+                            })
                     }
-                    .padding(.vertical, -Self.rowPadding)
                 }
             }
         } header: {
@@ -144,9 +144,6 @@ struct ExtensionsSettingsView: View {
             }
         }
     }
-
-    /// A grouped `Form` row's own vertical padding, which the stack above has to give back.
-    private static let rowPadding: CGFloat = 15
 
     private var matching: [InstalledExtension] {
         guard !filter.isEmpty else { return core.extensions.installed }
@@ -162,8 +159,7 @@ struct ExtensionsSettingsView: View {
     private var install: some View {
         Section {
             SettingsRow(title: "Search extensions", subtitle: searchSubtitle, anchor: .extensionsInstall) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+                ExtensionSettingsIcon(systemName: "magnifyingglass")
             } trailing: {
                 // Beside search, because this is the setting that decides what search can find.
                 Button("Registries…") { editingRegistries = true }
@@ -174,8 +170,7 @@ struct ExtensionsSettingsView: View {
                 title: "Import from Raycast", subtitle: importSubtitle,
                 anchor: .extensionsInstall
             ) {
-                Image(systemName: "arrow.down.doc")
-                    .foregroundStyle(pending.isEmpty ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+                ExtensionSettingsIcon(systemName: "arrow.down.doc")
             } trailing: {
                 if importProgress != nil {
                     ProgressView().controlSize(.small)
@@ -192,8 +187,7 @@ struct ExtensionsSettingsView: View {
                 subtitle: "A folder with package.json and built commands.",
                 anchor: .extensionsInstall
             ) {
-                Image(systemName: "folder")
-                    .foregroundStyle(.secondary)
+                ExtensionSettingsIcon(systemName: "folder")
             } trailing: {
                 Button("Choose…", action: addFolder)
             }
@@ -216,8 +210,7 @@ struct ExtensionsSettingsView: View {
                 title: "Leftover files", subtitle: reclaimableSubtitle,
                 anchor: .extensionsStorage
             ) {
-                Image(systemName: "internaldrive")
-                    .foregroundStyle(reclaimable.isEmpty ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+                ExtensionSettingsIcon(systemName: "internaldrive")
             } trailing: {
                 Button("Clean Up…") {
                     Task {
@@ -332,6 +325,18 @@ struct ExtensionsSettingsView: View {
     }
 }
 
+private struct ExtensionSettingsIcon: View {
+    let systemName: String
+    private let iconSize = Theme.Size.settingsRowIcon + Theme.Spacing.xs
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: Theme.Size.settingsRowIcon - Theme.Spacing.xs))
+            .foregroundStyle(.primary)
+            .frame(width: iconSize, height: iconSize)
+    }
+}
+
 /// A summary row, and while open its settings on an inset card — separators and fill, never glass.
 private struct ExtensionDisclosure: View {
     let installed: InstalledExtension
@@ -339,16 +344,12 @@ private struct ExtensionDisclosure: View {
     let onToggle: () -> Void
     let onUninstall: () -> Void
 
-    /// A grouped `Form` row's own vertical padding, restored around the summary.
-    private static let rowPadding: CGFloat = 15
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             summary
-                .padding(.vertical, Self.rowPadding)
             if isExpanded {
                 settings
-                    .padding(.bottom, Theme.Spacing.lg)
+                    .padding(.top, Theme.Spacing.lg)
             }
         }
     }
@@ -370,6 +371,7 @@ private struct ExtensionDisclosure: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel(
             isExpanded ? "Hide \(installed.title) settings" : "Configure \(installed.title)")
+        .id(SettingsTarget.row(.extensionsInstalled, installed.manifest.name))
     }
 
     /// One `Grid` for every run: separate grids size columns apart, stranding controls.
@@ -410,7 +412,6 @@ private struct ExtensionDisclosure: View {
         }
         // Indented under the row's icon, so the settings read as belonging to the row above them.
         .padding(.leading, Theme.Size.rowIcon + Theme.Spacing.lg)
-        .padding(.bottom, Theme.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -458,7 +459,7 @@ private struct SettingsCardRow<Control: View>: View {
     @ViewBuilder var control: Control
 
     var body: some View {
-        GridRow(alignment: .firstTextBaseline) {
+        GridRow(alignment: .center) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                 HStack(spacing: Theme.Spacing.sm) {
                     Text(title)
@@ -486,6 +487,7 @@ private struct SettingsCardRow<Control: View>: View {
                 .frame(width: controlWidth, alignment: .trailing)
                 .gridColumnAlignment(.trailing)
         }
+        .padding(.vertical, Theme.Spacing.xxs)
     }
 }
 
@@ -657,7 +659,6 @@ private struct ExtensionIconRow: View {
         }
     }
 
-    /// Exactly what the launcher row will draw — the shipped image, or the chosen tile.
     @ViewBuilder
     private var preview: some View {
         if let appearance {

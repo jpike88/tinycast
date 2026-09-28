@@ -366,13 +366,7 @@ private final class InstalledCLITurnRunner {
     }
 
     private func environment(for executable: URL) -> [String: String] {
-        let inheritedPath = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
-        var result = ProcessInfo.processInfo.environment.merging(
-            [
-                "NO_COLOR": "1",
-                "PATH": executable.deletingLastPathComponent().path + ":" + inheritedPath
-            ]
-        ) { _, value in value }
+        var result = ExecutableLocator.environment(running: executable)
         switch kind {
         case .claude:
             result["CLAUDE_CODE_SKIP_PROMPT_HISTORY"] = "1"
@@ -573,8 +567,7 @@ private final class InstalledCLITurnRunner {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        try? process.run()
-        process.waitUntilExit()
+        try? process.runObservingExit().wait()
     }
 
     /// The CLI has no delete-chat; chats live under `~/.cursor/chats/<workspace>/<id>`.

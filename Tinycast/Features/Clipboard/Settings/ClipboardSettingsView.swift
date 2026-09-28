@@ -11,11 +11,12 @@ struct ClipboardSettingsView: View {
         return Form {
             Section {
                 Toggle(isOn: $settings.clipboardEnabled) {
-                    SettingsRowTitle(.clipboardClipboard, "Enable Clipboard History")
+                    SettingsFeatureToggleLabel(
+                        anchor: .clipboardClipboard, title: "Enable Clipboard History",
+                        subtitle: "Keep copied items ready to reuse.")
                 }
-            } header: {
-                SettingsSectionHeader(.clipboardClipboard)
             }
+            .settingsAnchor(.clipboardClipboard)
 
             FeatureCommandsSection(owner: .clipboard, anchor: .clipboardCommands)
                 .settingsEnabled(settings.clipboardEnabled)
@@ -27,9 +28,6 @@ struct ClipboardSettingsView: View {
                     }
                 } label: {
                     SettingsRowTitle(.clipboardHistory, "Keep history for")
-                }
-                .onChange(of: settings.clipboardRetention) {
-                    core.clipboardCoordinator.applyRetention(settings.clipboardRetention)
                 }
                 Toggle(isOn: $settings.clipboardTextSearchEnabled) {
                     SettingsRowTitle(.clipboardHistory, "Search text in images and PDFs")

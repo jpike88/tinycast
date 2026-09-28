@@ -41,7 +41,7 @@ enum InstalledAIProbe {
         let handle = ProcessHandle()
         return await withTaskCancellationHandler(
             operation: {
-                // Detached because the read loop and `waitUntilExit` block: never a pool thread.
+                // Detached because the read loop and the exit wait block: never a pool thread.
                 await Task.detached {
                     try? FileManager.default.createDirectory(
                         at: workspace, withIntermediateDirectories: true)
@@ -50,12 +50,15 @@ enum InstalledAIProbe {
                     process.executableURL = executable
                     process.arguments = arguments
                     process.currentDirectoryURL = workspace
-                    if let environment { process.environment = environment }
+                    process.environment =
+                        environment ?? ExecutableLocator.environment(running: executable)
                     let stdin = input.map { _ in Pipe() }
                     process.standardInput = stdin ?? FileHandle.nullDevice
                     process.standardOutput = output
                     process.standardError = FileHandle.nullDevice
-                    do { try process.run() } catch { return Result(status: -1, output: "") }
+                    guard let exit = try? process.runObservingExit() else {
+                        return Result(status: -1, output: "")
+                    }
                     handle.set(process)
                     if let stdin, let input { Self.write(input, to: stdin, closing: true) }
                     let watchdog = Task {
@@ -73,7 +76,7 @@ enum InstalledAIProbe {
                     if data.count == Self.maximumOutputBytes, process.isRunning {
                         process.terminate()
                     }
-                    process.waitUntilExit()
+                    exit.wait()
                     watchdog.cancel()
                     return Result(
                         status: process.terminationStatus,
@@ -99,10 +102,11 @@ enum InstalledAIProbe {
             process.executableURL = executable
             process.arguments = arguments
             process.currentDirectoryURL = workspace
+            process.environment = ExecutableLocator.environment(running: executable)
             process.standardInput = stdin
             process.standardOutput = output
             process.standardError = FileHandle.nullDevice
-            do { try process.run() } catch { return "" }
+            guard let exit = try? process.runObservingExit() else { return "" }
             Self.write(input, to: stdin, closing: false)
             let watchdog = Task {
                 try? await Task.sleep(for: timeout)
@@ -118,7 +122,7 @@ enum InstalledAIProbe {
             }
             try? stdin.fileHandleForWriting.close()
             if process.isRunning { process.terminate() }
-            process.waitUntilExit()
+            exit.wait()
             watchdog.cancel()
             return String(bytes: data, encoding: .utf8) ?? ""
         }.value

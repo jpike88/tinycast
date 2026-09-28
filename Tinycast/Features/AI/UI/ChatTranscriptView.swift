@@ -571,27 +571,70 @@ private struct ChatToolRun: View {
 }
 
 /// A tool call inside a reply; the same row grammar the search one uses, with its own glyph.
+/// A command folds like the reasoning block: hidden while folded, the whole command out.
 private struct ChatToolRow: View {
     @Environment(\.metrics) private var metrics
+    @Environment(\.chatTextHighlight) private var highlight
+    @Environment(\.chatFindPath) private var path
     let use: ChatToolUse
+    @State private var expanded = false
+
+    /// A match inside a folded block would be found and then invisible, so find unfolds it.
+    private var isOpen: Bool {
+        expanded
+            || highlight.map {
+                use.detail?.range(of: $0.query, options: [.caseInsensitive, .diacriticInsensitive])
+                    != nil
+            } == true
+    }
 
     var body: some View {
-        HStack(spacing: metrics.spacing.sm) {
-            switch use.state {
-            case .running:
-                ProgressView().controlSize(.small)
-            case .completed:
-                glyph("wrench.and.screwdriver")
-            case .failed:
-                glyph("exclamationmark.triangle")
-                    .foregroundStyle(Theme.Colors.destructive)
+        VStack(alignment: .leading, spacing: metrics.spacing.xxs) {
+            Button {
+                withAnimation(.easeOut(duration: Theme.Duration.chatFooter)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: metrics.spacing.sm) {
+                    switch use.state {
+                    case .running:
+                        ProgressView().controlSize(.small)
+                    case .completed:
+                        glyph("wrench.and.screwdriver")
+                    case .failed:
+                        glyph("exclamationmark.triangle")
+                            .foregroundStyle(Theme.Colors.destructive)
+                    }
+                    Text(use.label)
+                        .font(metrics.typography.rowTrailing)
+                        .lineLimit(1)
+                    if use.detail != nil {
+                        Image(systemName: "chevron.right")
+                            .font(metrics.typography.keyCap)
+                            .rotationEffect(.degrees(isOpen ? 90 : 0))
+                    }
+                }
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .animation(.easeOut(duration: Theme.Duration.chatFooter), value: use.state)
+                .contentShape(Rectangle())
             }
-            Text(use.label)
-                .font(metrics.typography.rowTrailing)
-                .lineLimit(1)
+            .buttonStyle(.plain)
+            .disabled(use.detail == nil)
+            .accessibilityLabel(use.label)
+            .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+            if isOpen, let detail = use.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(metrics.typography.code)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, metrics.spacing.xs)
+                    .padding(.vertical, metrics.spacing.xxs)
+                    .background(
+                        RoundedRectangle(cornerRadius: metrics.radius.keyCap, style: .continuous)
+                            .fill(Theme.Colors.controlSurface))
+                    .findAnchor(highlight, leaf: path)
+                    .transition(.opacity)
+            }
         }
-        .foregroundStyle(Theme.Colors.textSecondary)
-        .animation(.easeOut(duration: Theme.Duration.chatFooter), value: use.state)
     }
 
     /// Sized by the row's own font, like the search row beside it, not by a symbol point size.

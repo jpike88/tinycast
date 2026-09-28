@@ -42,6 +42,7 @@ struct AIChatTests {
         singleToolCallsStaySingle()
         toolRunsDescribeTheirState()
         await theToolLoopRunsUntilTheModelStopsAsking()
+        await aBashCallShowsItsCommand()
         await theToolLoopRefusesToRunForever()
         await anUnlimitedToolLoopRunsPastEveryStep()
         await anUnlimitedToolLoopStopsWhenItsHistoryIsFull()
@@ -163,11 +164,11 @@ struct AIChatTests {
         let chat = AIChatState(history: ChatHistoryStore(directory: directory))
         let provider = ScriptedProvider(rounds: [
             [
-                .toolCall(id: "a", origin: "Files", title: "read"),
+                .toolCall(id: "a", origin: "Files", title: "read", detail: nil),
                 .toolResult(id: "a", isError: false),
                 .searching("news"),
                 .searched("news"),
-                .toolCall(id: "b", origin: "Files", title: "list"),
+                .toolCall(id: "b", origin: "Files", title: "list", detail: nil),
                 .toolResult(id: "b", isError: false),
                 .text("Done."),
                 .finished
@@ -286,7 +287,7 @@ struct AIChatTests {
             "and arms every round with the tools it wraps, which the turn itself never carried")
         expect(invoker.calls.map(\.name) == ["fs__read"], "and runs exactly what was asked for")
         expect(
-            events.contains(.toolCall(id: "c1", origin: "Files", title: "read")),
+            events.contains(.toolCall(id: "c1", origin: "Files", title: "read", detail: nil)),
             "the transcript is told which tool ran, in words a row can show")
         expect(
             events.contains(.toolResult(id: "c1", isError: false)),
@@ -305,6 +306,26 @@ struct AIChatTests {
         expect(
             second.messages.dropLast().last?.toolCalls.first?.id == "c1",
             "paired with the assistant turn that asked for it, which no provider accepts orphaned")
+    }
+
+    /// A bash call's row shows the command it ran, read from the arguments the model sent.
+    static func aBashCallShowsItsCommand() async {
+        let base = ScriptedProvider(rounds: [
+            [
+                .toolCallRequested(
+                    AIToolCall(id: "b1", name: "bash", arguments: #"{"command":"git status"}"#))
+            ],
+            [.text("done"), .finished]
+        ])
+        let invoker = RecordingInvoker(result: "clean")
+        let provider = AIToolLoopProvider(
+            base: base, tools: BashToolSchema.tools, maxRounds: 10,
+            invoke: { call in await invoker.invoke(call) })
+        let events = await collect(provider)
+        expect(
+            events.contains(.toolCall(id: "b1", origin: "Bash", title: "Run command",
+                                      detail: "git status")),
+            "the row carries the command, which the code block shows")
     }
 
     /// A model that only ever calls has stopped answering, and the turn has to end saying so.
@@ -400,13 +421,21 @@ struct AIChatTests {
                         callID: "c2", origin: "Files", title: "write", state: .running,
                         textOffset: 7, sequence: 1)
                 ]))
+        session.append(
+            ChatMessage(
+                role: .assistant, text: "ran it", state: .complete,
+                toolUses: [
+                    ChatToolUse(
+                        callID: "c3", origin: "Bash", title: "Run command", state: .completed,
+                        detail: "ls -la", textOffset: 7, sequence: 0)
+                ]))
         session.append(ChatMessage(role: .user, text: "list my PRs", toolScope: "github"))
         session.append(ChatMessage(role: .assistant, text: "Two open."))
         store.save(session)
 
         let reloaded = ChatHistoryStore(directory: directory).session(id: session.id)
         expect(
-            reloaded?.messages[2].toolScope == "github" && reloaded?.messages[0].toolScope == nil,
+            reloaded?.messages[3].toolScope == "github" && reloaded?.messages[0].toolScope == nil,
             "a question addressed to one server still names it after reopening, so Regenerate does too")
         let uses = reloaded?.messages[1].toolUses ?? []
         expect(uses.count == 2, "a reopened chat still shows what the model did on the reader's behalf")
@@ -414,6 +443,10 @@ struct AIChatTests {
         expect(
             uses.last?.state == .failed,
             "a call left running belonged to a process that is gone, so it never reported back")
+        let runs = reloaded?.messages[2].toolUses ?? []
+        expect(
+            runs.first?.detail == "ls -la", "the command a call ran is still there on reopening")
+        expect(runs.first?.label == "Called Bash · Run command", "and the row still names the tool")
     }
 
     private static let turn = AIRequest(messages: [AIMessage(role: .user, text: "go")])

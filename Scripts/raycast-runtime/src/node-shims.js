@@ -727,16 +727,12 @@ const childProcess = {
       file,
     );
   },
-  /// A buffered `spawn`: the child runs to completion and its output is then emitted as one `data`
-  /// event. That covers the write-query-then-read-all pattern (`@raycast/utils`' `useSQL` spawns
-  /// `sqlite3` exactly this way), which is what extensions actually do with it — true streaming would
-  /// need a duplex channel across the bridge.
   spawn(file, args = [], options = {}) {
     if (!Array.isArray(args)) {
       options = args;
       args = [];
     }
-    return new BufferedChildProcess(String(file), args.map(String), options);
+    return new ChildProcess(String(file), args.map(String), options);
   },
   fork() {
     throw new Error("child_process.fork is not supported in Tinycast extensions.");
@@ -872,6 +868,7 @@ const cryptoModule = {
     queueMicrotask(() => callback(null, key));
   },
   timingSafeEqual: (a, b) => Buffer.from(a).equals(Buffer.from(b)),
+  getHashes: () => ["md5", "sha1", "sha256", "sha384", "sha512"],
   getRandomValues: (target) => cryptoModule.randomFillSync(target),
   webcrypto: null,
   constants: {},
@@ -931,7 +928,7 @@ const zlib = unsupportedModule("zlib", zlibImpl);
 
 // ─── events ─────────────────────────────────────────────────────────
 
-class BufferedChildProcess extends EventEmitter {
+class ChildProcess extends EventEmitter {
   constructor(file, args, options) {
     super();
     this.pid = 0;
@@ -972,13 +969,13 @@ class BufferedChildProcess extends EventEmitter {
       input,
       // `detached` only makes a process group; only an unread child may answer before it exits.
       detached: !!options.detached && (Array.isArray(options.stdio) ? options.stdio[1] : options.stdio) === "ignore",
-    });
+    }, (pid) => Promise.all([pipeChild(pid, 1, this.stdout), pipeChild(pid, 2, this.stderr)]));
     this.pid = pid;
+    if (pid) queueMicrotask(() => this.emit("spawn"));
     exit.then(
       (raw) => {
         this.exitCode = raw.status;
         this.stdin.emit("finish");
-        this.emit("spawn");
         this.stdout.end(Buffer.from(base64ToBytes(raw.stdout)));
         this.stderr.end(Buffer.from(base64ToBytes(raw.stderr)));
         // One host reply carries both, but a reader still expects the output before the exit code.
@@ -1060,14 +1057,37 @@ function decorateProcessError(error, label) {
 }
 
 /// Launched synchronously because extensions store `child.pid` right away to `process.kill` it later.
-function startChild(spec) {
+function startChild(spec, drain) {
   try {
     const pid = hostCallSync("proc", "start", [spec]);
-    const exit = spec.detached ? Promise.resolve({ stdout: "", stderr: "", status: 0 }) : hostCall("proc", "wait", [pid]);
+    const exit = spec.detached
+      ? Promise.resolve({ stdout: "", stderr: "", status: 0 })
+      : Promise.resolve(drain?.(pid)).then(() => hostCall("proc", "wait", [pid]));
     return { pid, exit };
   } catch (error) {
     return { pid: undefined, exit: Promise.reject(error) };
   }
+}
+
+async function pipeChild(pid, fd, stream) {
+  let held = Buffer.alloc(0);
+  for (let chunk; (chunk = await hostCall("proc", "read", [pid, fd])); ) {
+    const bytes = Buffer.concat([held, Buffer.from(base64ToBytes(chunk))]);
+    const cut = utf8Boundary(bytes);
+    held = bytes.subarray(cut);
+    if (cut) stream.write(bytes.subarray(0, cut));
+  }
+  if (held.length) stream.write(held);
+}
+
+/// Holds back a trailing partial UTF-8 character so a chunk never splits one.
+function utf8Boundary(bytes) {
+  for (let i = bytes.length - 1; i >= Math.max(0, bytes.length - 3); i--) {
+    if ((bytes[i] & 0xc0) === 0x80) continue;
+    const need = bytes[i] >= 0xf0 ? 4 : bytes[i] >= 0xe0 ? 3 : bytes[i] >= 0xc0 ? 2 : 1;
+    return bytes.length - i < need ? i : bytes.length;
+  }
+  return bytes.length;
 }
 
 /// Node's `ChildProcess.kill` reports an undeliverable signal by returning false, never by throwing.
@@ -1686,6 +1706,60 @@ class AsyncResource {
   }
 }
 
+// ─── diagnostics_channel ────────────────────────────────────────────
+
+/// undici opens a channel per instrumentation point at module scope, so `channel` cannot refuse.
+class Channel {
+  constructor(name) {
+    this.name = name;
+    this._subscribers = [];
+  }
+  get hasSubscribers() {
+    return this._subscribers.length > 0;
+  }
+  subscribe(onMessage) {
+    this._subscribers.push(onMessage);
+  }
+  unsubscribe(onMessage) {
+    const index = this._subscribers.indexOf(onMessage);
+    if (index === -1) return false;
+    this._subscribers.splice(index, 1);
+    return true;
+  }
+  publish(message) {
+    for (const onMessage of [...this._subscribers]) {
+      try {
+        onMessage(message, this.name);
+      } catch (error) {
+        reportUncaught(error);
+      }
+    }
+  }
+  bindStore() {}
+  unbindStore() {
+    return false;
+  }
+  runStores(message, fn, thisArg, ...args) {
+    this.publish(message);
+    return Reflect.apply(fn, thisArg, args);
+  }
+}
+
+const channels = new Map();
+
+function channel(name) {
+  if (!channels.has(name)) channels.set(name, new Channel(name));
+  return channels.get(name);
+}
+
+const diagnosticsChannel = unsupportedModule("diagnostics_channel", {
+  Channel,
+  channel,
+  hasSubscribers: (name) => channels.get(name)?.hasSubscribers ?? false,
+  subscribe: (name, onMessage) => channel(name).subscribe(onMessage),
+  unsubscribe: (name, onMessage) => channels.get(name)?.unsubscribe(onMessage) ?? false,
+});
+
 // ─── Registry ───────────────────────────────────────────────────────
 
 export const nodeModules = {
@@ -1718,7 +1792,13 @@ export const nodeModules = {
   stream: streamModule,
   "stream/web": webStreamModule,
   "stream/promises": { pipeline: (...stages) => pipelinePromise(stages), finished: finishedPromise },
-  worker_threads: unsupportedModule("worker_threads", { isMainThread: true }),
+  // No-ops rather than refusals: undici's `markAsUncloneable || (() => {})` never falls back.
+  worker_threads: unsupportedModule("worker_threads", {
+    isMainThread: true,
+    markAsUncloneable: () => {},
+    markAsUntransferable: () => {},
+    isMarkedAsUntransferable: () => false,
+  }),
   readline: unsupportedModule("readline"),
   tty: { isatty: () => false },
   vm: unsupportedModule("vm"),
@@ -1728,6 +1808,7 @@ export const nodeModules = {
   inspector: {},
   v8: {},
   async_hooks: { AsyncLocalStorage, AsyncResource },
+  diagnostics_channel: diagnosticsChannel,
 };
 
 function requireStub(name) {
@@ -1738,7 +1819,7 @@ function requireStub(name) {
 // long tail (http2, domain, repl, …) from dependencies that only touch them on paths an
 // extension never reaches, so a require-time throw would fail extensions that actually work.
 const REMAINING_BUILTINS = [
-  "assert/strict", "console", "diagnostics_channel", "dns/promises", "domain", "http2",
+  "assert/strict", "console", "dns/promises", "domain", "http2",
   "inspector/promises", "path/posix", "path/win32", "readline/promises", "repl",
   "stream/consumers", "sys", "trace_events", "util/types", "wasi", "sea", "sqlite", "test",
   "test/reporters",
