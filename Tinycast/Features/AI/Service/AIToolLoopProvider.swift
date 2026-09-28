@@ -104,7 +104,7 @@ struct AIToolLoopProvider: AIProvider {
         case BashToolSchema.toolName: return BashToolSchema.command(in: call.arguments)
         case let name where FileSystemToolSchema.isBuiltinTool(name):
             return FileSystemToolSchema.detail(in: call.arguments)
-        case CalcToolSchema.toolName:
+        case CalcToolSchema.name:
             return CalcToolSchema.query(from: call.arguments)
         default: return nil
         }

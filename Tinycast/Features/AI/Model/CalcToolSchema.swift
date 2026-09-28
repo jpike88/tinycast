@@ -28,7 +28,7 @@ enum CalcToolSchema {
                         "type": .string("string"),
                         "description": .string(
                             "The expression as it would be typed into the launcher's calculator: "
-                                + `"12 * 7.5", "2 GB to MB", "100 usd to eur", "5pm SF to Tokyo".`),
+                                + "12 * 7.5, 2 GB to MB, 100 usd to eur, 5pm SF to Tokyo."),
                     ])
                 ]),
                 "required": .array([.string("query")]),

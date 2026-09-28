@@ -672,6 +672,20 @@ shows in the transcript as a tool row under origin “Tinycast”; an unconfigur
 does not end the turn — it is a tool *result the model reads* (the endpoint's own error message, or
 the Settings pointer) and routes around.
 
+### The calculator built-in
+
+HTTP routes that call tools are also offered Tinycast's **`calculator`** tool, one call to the
+same `CalcEngine` the palette's inline card answers with — arithmetic, units, currency and
+crypto, time zones and time spans. There is no Settings switch and no consent gate, like a
+shell or a file never asked for: it is pure computation, reading nothing from disk beyond the
+`CurrencyRateStore` snapshot already cached for the card. `CalcToolSchema` is pure Model, in
+the shape the web-search built-in carries: the schema, the argument read and the tool row's
+"Calculate" title. `CalcToolExecutor` is the one caller, injecting the clock, the calendar,
+the rate table and the region currency the way `CalcMemo` does; the answer travels back
+canonical in the copy text's spelling. A query the engine cannot answer is a tool *result the
+model reads* — `Nothing to calculate: that was not calculator input.` — never a thrown error;
+it is pinned end to end by `calc-tool-test`.
+
 ### The Files built-ins
 
 Alongside search, HTTP routes that call tools are offered Tinycast's eleven **filesystem

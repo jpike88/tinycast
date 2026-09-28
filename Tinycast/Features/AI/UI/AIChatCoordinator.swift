@@ -421,8 +421,7 @@ final class AIChatCoordinator {
         }
     }
 
-    /// Pure and consent-free, like web search never asking: nothing leaves the Mac and nothing
-    /// on disk changes.
+    /// Pure and consent-free: nothing leaves the Mac, nothing on disk changes.
     private func invokeCalc(_ call: AIToolCall) -> AIToolResult {
         CalcToolExecutor.invoke(
             call, rates: core.currencyRates.rates, region: RegionCurrency.code,
