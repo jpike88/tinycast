@@ -367,6 +367,9 @@ final class AIChatCoordinator {
             if AIWebSearch.isBuiltIn(call.name) {
                 return await BraveSearchService.invoke(call)
             }
+            if CalcToolSchema.isBuiltIn(call.name) {
+                return await bash.invokeCalc(call)
+            }
             return await mcp.invoke(call, in: chatID)
         }
     }
@@ -416,6 +419,14 @@ final class AIChatCoordinator {
         default:
             return false
         }
+    }
+
+    /// Pure and consent-free, like web search never asking: nothing leaves the Mac and nothing
+    /// on disk changes.
+    private func invokeCalc(_ call: AIToolCall) -> AIToolResult {
+        CalcToolExecutor.invoke(
+            call, rates: core.currencyRates.rates, region: RegionCurrency.code,
+            now: Date(), calendar: .current)
     }
 
     /// The shell the model may call, gated and bounded exactly as an MCP tool is.
@@ -510,6 +521,7 @@ final class AIChatCoordinator {
             return !excluded.contains(route.slug)
         }
         // Armed on API routes only, at large or narrowed to it; a named server says otherwise.
+        armed.append(CalcToolSchema.tool())
         if core.aiSettings.bashToolEnabled, !excluded.contains(BashToolSchema.slug),
             slug == nil
         {
