@@ -321,8 +321,11 @@ private struct AIToolsPicker: View {
         let scope = chat.toolScope
         let takesTools = coordinator.capabilities(for: chat).tools
         let bash = coordinator.isBashToolArmed
-        let offered = servers.count + (bash ? 1 : 0)
-        let active = servers.filter { scope.allows($0.slug) }.count + (bash && scope.allows("bash") ? 1 : 0)
+        let files = coordinator.isFileToolArmed
+        let offered = servers.count + (bash ? 1 : 0) + (files ? 1 : 0)
+        let active =
+            servers.filter { scope.allows($0.slug) }.count
+            + (bash && scope.allows("bash") ? 1 : 0) + (files && scope.allows("files") ? 1 : 0)
         Menu {
             if offered == 0 {
                 Text("No MCP servers are connected")
@@ -338,6 +341,14 @@ private struct AIToolsPicker: View {
                         isOn: Binding(
                             get: { scope.allows("bash") },
                             set: { _ in coordinator.toggleToolServer("bash", in: chat) }))
+                        .disabled(!scope.isEnabled)
+                }
+                if files {
+                    Toggle(
+                        "Files",
+                        isOn: Binding(
+                            get: { scope.allows("files") },
+                            set: { _ in coordinator.toggleToolServer("files", in: chat) }))
                         .disabled(!scope.isEnabled)
                 }
             if !servers.isEmpty {

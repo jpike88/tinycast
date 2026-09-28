@@ -580,6 +580,7 @@ run ai-chat-test           Tinycast/Features/AI/Model/AIRequest.swift \
                            Tinycast/Features/AI/Model/ChatCitations.swift \
                            Tinycast/Features/AI/Model/ChatToolScope.swift \
                            Tinycast/Features/AI/Model/BashToolSchema.swift \
+                           Tinycast/Features/AI/Model/FileSystemToolSchema.swift \
                            Tinycast/Features/AI/Model/MarkdownBlock.swift \
                            Tinycast/Features/AI/Service/AIProvider.swift \
                            Tinycast/Features/AI/Service/ChatHistoryStore.swift \
@@ -602,10 +603,14 @@ run chat-markdown-test     Tinycast/Platform/Appearance.swift \
                            Tinycast/Features/AI/Model/MarkdownBlock.swift \
                            Tinycast/Features/AI/UI/ChatTextHighlight.swift \
                            Tinycast/Features/AI/UI/ChatMarkdownRenderer.swift
-run bash-tool-test         Tinycast/Features/AI/Model/AITool.swift \
+run file-tool-test         Tinycast/Features/AI/Model/AITool.swift \
                            Tinycast/Features/AI/Model/JSONValue.swift \
-                           Tinycast/Features/AI/Model/BashToolSchema.swift \
-                           Tinycast/Features/AI/Service/BashToolExecutor.swift
+                           Tinycast/Features/AI/Model/FileSystemToolSchema.swift \
+                           Tinycast/Features/AI/Service/FileToolExecutor.swift
+run file-tool-test         Tinycast/Features/AI/Model/AITool.swift \
+                           Tinycast/Features/AI/Model/JSONValue.swift \
+                           Tinycast/Features/AI/Model/FileSystemToolSchema.swift \
+                           Tinycast/Features/AI/Service/FileToolExecutor.swift
 run mcp-test               Tinycast/Features/Settings/AppSettingsKey.swift \
                            Tinycast/Features/AI/Model/AIConnection.swift \
                            Tinycast/Features/AI/Model/AppleIntelligence.swift \

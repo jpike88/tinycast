@@ -534,13 +534,16 @@ window, and every chat action either surface sends — is the nineteenth feature
 - Drop a PDF on the pane with a text-only model selected: the HUD refuses it, as a paste would.
 - Collapse the sidebar with the toolbar button; ⌘N and ⌘Q (Close Window) still work, and ⌘Q with
   Settings in front closes Settings instead.
-- Harnesses: `ai-provider-test` (endpoints, request bodies, stream decoding, persistence repair,
+`ai-provider-test` (endpoints, request bodies, stream decoding, persistence repair,
   Codex framing, on-device routing, the two MCP launch encodings and the two consent channels),
   `ai-chat-test` (`ChatSession`, `MarkdownBlock`, `ChatHistoryStore` with renames and pins,
   `AIToolLoopProvider`, regenerate, and `AIChatSurfacesState`'s one-live-place rule),
   `codex-turn-test` (the Stop path, driven against a stub app-server stalled where Stop races the
   turn ID, plus the MCP launch boundary, one launch for concurrent starts, the elicitation, the
   rows and the call cap),
+  `file-tool-test` (the eleven Files schemas, their parse refusals, the workspace path
+  resolution, and every read, write, edit, glob, grep, create, delete, info and move answer
+  against a scratch folder),
   `installed-ai-test` (Claude/Grok/OpenCode/Cursor flags, prompt
   framing, streaming and cleanup, and Claude's private MCP configuration, control channel, round
   cap and managed-policy branch) and `apple-intelligence-test` (status copy, snapshot deltas,
@@ -668,6 +671,27 @@ search is that Mac's call. A tool call the loop yields
 shows in the transcript as a tool row under origin “Tinycast”; an unconfigured or failing engine
 does not end the turn — it is a tool *result the model reads* (the endpoint's own error message, or
 the Settings pointer) and routes around.
+
+### The Files built-ins
+
+Alongside search, HTTP routes that call tools are offered Tinycast's eleven **filesystem
+tools** — `read`, `write`, `edit`, `glob`, `grep`, `create-directory`, `delete-file`,
+`get-file-info`, `get-selected-items`, `move-file`, `open-item` — under origin “Files”, so the
+model can work with this account's files without a shell. `FileSystemToolSchema` is pure Model:
+the schemas, the parse (each tool's row of keys and types), the ~ expansion and the row detail
+the transcript shows (a path, or the pattern a search ran), pinned by `file-tool-test`.
+`FileToolExecutor` is the one Service caller: `FileManager` work off the main actor on a detached
+task, `get-selected-items` through `osascript`'s Finder Apple Events and `open-item` through
+`NSWorkspace`. Paths resolve against the workspace root — the home directory; a relative path
+lands there, an absolute or `~/…` path is itself.
+
+Reads and searches never ask. Anything that changes the disk or launches an app — write, edit,
+create-directory, delete-file, move-file, open-item — goes through the same `MCPTrust` ladder
+the servers use (`aiFileToolTrust`, asked first, with per-chat and Always grants) and Settings
+holds `aiFileToolEnabled` with it: both keys are excluded from backups, since allowing a model
+to touch files is a consent given on this Mac in person, and `setFileToolEnabled` off drops every
+per-chat grant. In a chat's tools menu the set is one row, switchable off by its `files`
+pseudo-slug like Bash's.
 Nothing *guesses* at a capability: images ride on what the model's own catalog said, and a vendor
 API that does not take one simply returns its error. What is gated is only what a route provably
 cannot carry — a PDF to a text transport — refused at the composer with a HUD naming the reason.
