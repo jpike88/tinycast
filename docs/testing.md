@@ -101,7 +101,7 @@ If a change touches anything in the right column, the harness on the left is man
 | `palette-selection-test` | `Features/PaletteRowIndex.swift` |
 | `interface-size-test` | `DesignSystem/InterfaceMetrics.swift`, `Features/Settings/InterfaceSize.swift`, `Extensions/Model/ExtensionFormMetrics.swift` |
 | `palette-placement-test` | `DesignSystem/Theme.swift`, `Palette/PalettePlacement.swift` |
-| `hotkey-test` | `HotKeys/Model/DoubleTapModifier.swift`, `DoubleTapDetector.swift`, `GlobeTapDetector.swift`, `HotKeyBinding.swift`, `HyperKey.swift`, `HotKeyAction.swift`, `Service/KeyShortcut.swift`, and the command→action mapping in `Launcher/Model/CommandID.swift` |
+| `hotkey-test` | `HotKeys/Model/DoubleTapModifier.swift`, `DoubleTapDetector.swift`, `GlobeTapDetector.swift`, `HotKeyBinding.swift`, `HotKeySpelling.swift`, `HyperKey.swift`, `HotKeyAction.swift`, `Service/KeyShortcut.swift`, and the command→action mapping in `Launcher/Model/CommandID.swift` |
 | `fallback-test` | `Launcher/Model/Fallback.swift`, plus the `CommandID` and `Quicklink` ids it is built from |
 | `dictionary-test` | `Dictionary/Model/DictionaryEntry.swift`, `DictionaryMarkup.swift` — a real XHTML record and the plain-text fallback, read into page blocks |
 | `callout-test` | `DesignSystem/Theme.swift`, `HotKeys/UI/CalloutPlacement.swift` |
@@ -109,6 +109,7 @@ If a change touches anything in the right column, the harness on the left is man
 | `volume-test` | `SystemActions/Model/VolumeLevel.swift` |
 | `window-command-test` | `WindowManagement/WindowCommand.swift`, `WindowPlacementEngine.swift`, `WindowActionMemory.swift` |
 | `window-layout-test` | `WindowManagement/Model/WindowLayout*.swift` and `CustomWindowSize*.swift` — the layout record, its geometry and its inverse, the plan and the store; custom sizes' units, frames and store |
+| `window-room-test` | `WindowManagement/Model/Room*.swift` — every room layout and its minimum sizes, the grid, arrangement reading, window matching, parking, the plan, Tab's choices and the three stores |
 | `custom-command-test` | `CustomCommands/Model/CustomCommand.swift`, `Service/ShellCommandRunner.swift` |
 | `uninstall-test` | all five pure files in `Uninstall/Model/` |
 | `quicklink-test` | all of `Quicklinks/Model/` |
@@ -127,6 +128,8 @@ If a change touches anything in the right column, the harness on the left is man
 | `entry-icon-test` | `EntryIcon` — that each case draws, caches and prints apart from the others, and that a moved `FileIconStamp` retires the bitmap decoded before it |
 | `text-diff-test` | `QuickActions/Model/TextDiffEngine.swift` — exact chunks, Unicode, ties, token-cap boundaries and fast paths |
 | `settings-backup-test` | `Settings/AppSettingsKey.swift`, `Backup/Model/SettingsBackupCoverage.swift` |
+| `settings-file-test` | `Settings/Model/` and `Settings/Service/` — key paths, value tokens, the printer and parser, and the repository's import, replace, save, reload and symlink handling on a scratch folder |
+| `window-file-test` | `WindowManagement/Model/WindowManagementFileFormat.swift` — command shortcuts, custom sizes, layouts and rooms as settings.json spells them, hand edits and bad records |
 | `backup-archive-test` | all of `Backup/Model/`, plus `Backup/Service/BackupStaging.swift` |
 | `updates-test` | `Updates/Model/` — version precedence, channel filtering, install route, readiness |
 | `support-test` | `Support/Model/` — when the support reminder comes due, and a clock moved backwards |
@@ -525,9 +528,11 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
   flipping it back re-renders without dirtying the note or touching undo
 - Edit one note, switch to a shorter note, then Undo and Redo: the new note remains intact and the app
   does not terminate
-- Marked-text input, emoji, combining marks, Copy, Cut, Paste, Select All, Undo, Redo, and Find preserve
-  exact source
-- An empty note shows `Start writing…`; the footer count is right after typing, pasting and undoing
+- Marked-text input, emoji, combining marks, Copy, Cut, Paste, Select All, Undo, and Redo preserve
+  exact source; ⌘F finds occurrences in the active note with rendering on and off, and Escape closes
+  the find bar before hiding Notes
+- An empty note shows `Start writing…`; ⌘F moves it below the find bar without overlap, and closing Find
+  restores its position. The footer count is right after typing, pasting and undoing
 - With Render Markdown and Show Formatting Bar on, the band under a note holds the character count on
   the left and the round formatting button on the right; with either setting off, the old centred
   count footer is back and nothing else moved
@@ -642,6 +647,10 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 - Cycling, Restore, custom sizes and display moves all work on Notes and on Settings
 - Fullscreen on Settings toggles it; on the Notes window it does nothing
 - With the note switcher open a command places Notes; the switcher and HUDs are never placed
+- Rooms: create one from Switch Room; ⇥ glides the preview through its layouts; ↵ lands its windows
+  with the gap, hides other apps and parks their extra windows; quitting, `kill -9` then relaunching, and
+  turning Window Management off each bring every window back.
+  Repeat on two displays and with Reduce Motion on
 
 ### Extensions
 
@@ -674,6 +683,7 @@ Wipe the Dev channel and check that path directly:
 ```sh
 rm -rf ~/Library/Caches/com.tinycast.app.dev
 rm -rf "$HOME/Library/Application Support/com.tinycast.app.dev"
+rm -rf ~/.config/tinycast-dev
 defaults delete com.tinycast.app.dev 2>/dev/null || true
 tccutil reset Accessibility com.tinycast.app.dev 2>/dev/null || true
 ```

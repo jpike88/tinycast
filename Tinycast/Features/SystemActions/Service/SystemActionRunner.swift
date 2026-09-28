@@ -101,9 +101,12 @@ enum SystemActionRunner {
         case .volume100:
             try setVolume(1)
         case .showDesktop:
-            try await runProcess(
-                "/System/Applications/Mission Control.app/Contents/MacOS/Mission Control",
-                arguments: ["1"])
+            // Executing the binary directly is SIGKILLed; only a LaunchServices launch is allowed.
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.arguments = ["1"]
+            _ = try await NSWorkspace.shared.openApplication(
+                at: URL(fileURLWithPath: "/System/Applications/Mission Control.app"),
+                configuration: configuration)
         case .toggleAppearance:
             // The script returns the resulting state, so the confirmation can name it.
             let result = try await runAppleScript(
@@ -602,12 +605,11 @@ enum SystemActionRunner {
             process.standardInput = FileHandle.nullDevice
             process.standardOutput = stdout
             process.standardError = stderr
-            do { try process.run() } catch {
+            do { try process.runObservingExit().wait() } catch {
                 throw SystemActionFailure(
                     "\(URL(fileURLWithPath: executable).lastPathComponent) could not start: \(error.localizedDescription)"
                 )
             }
-            process.waitUntilExit()
             let outData = stdout.fileHandleForReading.readDataToEndOfFile()
             let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
             return ProcessOutput(

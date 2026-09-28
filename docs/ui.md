@@ -253,10 +253,10 @@ the window. The three actions cannot do that, so they live in an `NSTitlebarAcce
 at `.trailing` — `NoteTitlebarActions`, the launcher's footer capsule (`BarButton` in a
 `frosted(in: Capsule())`) with glyphs in place of pills. Its 44-point height is what sizes the band.
 
-`NotesWindowController` no longer computes frames: the user owns the size, and AppKit autosaves both
-position and size under `"Notes Window"`. The window shows exactly one surface at a time — editor,
-switcher, or the "No Notes" empty state — and the character count is part of the editor surface, so
-it never appears without a note.
+`NotesWindowController` preserves the user-owned size and AppKit autosaves the frame under
+`"Notes Window"`; only a title-bar double-click computes a top-right target. The window shows exactly
+one surface at a time — editor, switcher, or the "No Notes" empty state — and the character count is
+part of the editor surface, so it never appears without a note.
 
 The header keeps a fixed slot for status so Saving, Saved, failure, and conflict symbols cannot move
 the controls. Failure and conflict symbols can be clicked to reopen their recovery report after a
@@ -270,9 +270,11 @@ Markdown styles it in place with no new tokens. Notes type sits one system text 
 of the app, because a note is for reading: body text is the title3 size in `noteText`, and headings 1
 to 3 use the largeTitle, title1 and title2 sizes (bold, bold, semibold). Interface Size does not scale
 it. Inline code is monospaced on `controlSurface`, and links use the system link colour. Quotes and
-checked tasks dim to `textSecondary`, and a checked task is struck through. Markers on the caret's line
-show in `textTertiary`; everywhere else they are hidden. A revealed list or quote marker hangs left of
-its text, so the text does not move when the caret arrives, unless the marker is wider than the slot.
+checked tasks dim to `textSecondary`, and a checked task is struck through. Most markers show in
+`textTertiary` on the caret's line and are hidden elsewhere. Bullets keep their rendered dot even under
+the caret; revealed list markers stay `textSecondary`. Revealed non-bullet list and quote markers hang
+left of their text, so the text does not move when the caret arrives, unless the marker is wider than
+the slot. Empty list items keep body-sized invisible markers so their rows match filled items' height.
 
 A layout fragment draws the block chrome. A code band fills `cardFill` with `menu` corners at its ends
 and a `textTertiary` language label, inset by `lg`. A quote bar is `markdownQuoteBar` wide in `border`,
@@ -538,11 +540,13 @@ sole owner rule) and is the only presenter, so every confirmation in the app loo
   read left to right and the outcome is the last thing you want to land on. Auto-dismisses after
   `Duration.messageHUD` (2.4s) — longer than the volume box, since a sentence needs reading time and a
   level only needs a glance — and a repeat call replaces rather than stacks.
-- **The same pill reports work still running**, through `showProgress(message:)`: a Quick Action set to
+- **The same pill reports work still running**, through `showProgress(message:onCancel:)`: a Quick Action set to
   replace has no panel to watch the answer arrive in, so the pill says `Fixing Grammar…` in its place
   and the result message replaces it when the model is done. Its trailing mark is a spinner rather
   than a tone, which is why `MessageHUDView.Accessory` exists — a tone says how something *went*, and
-  nothing has gone anywhere yet. The spinner is **`progress.indicator` with
+  nothing has gone anywhere yet. When `onCancel` is provided, hovering over the pill lights it up,
+  turns the spinner into an `xmark`, and clicking anywhere on the pill cancels the in-flight task.
+  The spinner is **`progress.indicator` with
   `.symbolEffect(.variableColor)`, never a `ProgressView`**: AppKit draws that one itself and ignores
   every tint given to it, so a blue spinner is only reachable as a symbol. Progress has no natural
   dwell, so it is shown with `dwells: false` and stays up until something replaces it or
@@ -579,6 +583,23 @@ second later, which read as a thick bar flashing at the right edge of each pane.
 per-scroll-view shim: chasing that flip after the fact is what caused the flash.
 
 ---
+
+## The room preview
+
+The one full-screen surface besides the drop guides, and like them a readout: one click-through,
+never-key panel per display at `.paletteDropGuide`, under the palette. It is the exception to "glass
+only on floating controls" in the other direction — the whole desk is `NSVisualEffectView`
+`.fullScreenUI` blurred behind the window and dimmed by `roomPreviewDim`, so only the cards read.
+
+A card is a solid window-to-be, not a row: `Theme.Radius.roomCard` (16), `roomCardFill` in both
+appearances so the desk never shows through it, a `roomCardStroke` accent border, and one shadow.
+Its title bar carries three quiet dots, the app name (`.headline`) and the window title. The icon
+grows to `roomCardIconLarge` on a card larger than 320 pt both ways, hides on one shorter than 160,
+and moves out from under the palette.
+
+Motion is `Theme.RoomMotion.glide` for a card that changes place, a fade for one that arrives or
+leaves, and `fadeIn`/`fadeOut` for the panels; Reduce Motion removes all of it. See
+[features/window-rooms.md](features/window-rooms.md#the-preview).
 
 ## The camera preview panel
 
@@ -634,6 +655,8 @@ system-drawn and a pane reads exactly as macOS System Settings does.
   the way `SystemPromptEditor` does; dimming an editor that still accepts input is the bug, not the fix.
 - **A group is a `Section`**, with `header:` for its name and `footer:` for the caption that used to
   ride under the last row.
+- **Interface size and Emoji Skin Tone use `settingsOptionSegment`** for the same square selection
+  shape, while keeping their own content sizes.
 - **A pane scans as section → setting → control, so its words are rationed.** A subtitle is a short
   phrase, and only where the title leaves out a consequence or a limit ("Shortcuts still work when
   hidden."); a footer carries a caveat, such as privacy or cost, never a restatement of its header. A
@@ -731,12 +754,17 @@ system-drawn and a pane reads exactly as macOS System Settings does.
   fixed that, but tears a row's `TextField` and checkbox — both `NSView`s — down when the row scrolls
   off and builds them again when one scrolls on, about 7 ms and 4 ms on macOS 27. A fast scrollbar
   drag replaces a screenful of rows per update, so the list froze for 100–400 ms at a time.
-  `LauncherItemsSection` therefore holds its items in `LauncherItemsTable`, an `NSTableView` filling
-  one Form row: it keeps a screenful of cells and hands each a new entry, and each cell hosts the
+  The Applications and Apple Shortcuts lists therefore use `LauncherItemsTable`, an `NSTableView`
+  filling one Form row; the shorter launcher-item lists use native Form rows. The table keeps a
+  screenful of cells and hands each a new entry, and each cell hosts the
   SwiftUI `LauncherItemRow`, so a reused row's controls update in place. A hosted row inherits nothing
   from the pane, so the table injects the stores the row reads, and moves Tab on to the next row's
-  alias field itself; rows are a fixed 54 pt. A negative `.padding` doesn't move an AppKit view, so the
-  table hangs 15 pt past its own view into the Form row's padding, where the lazy stack's rows sat.
+  alias field itself; rows are a fixed 45 pt to match the native Form rows. A negative `.padding`
+  doesn't move an AppKit view, so the table hangs 11 pt into the Form row's padding at the top
+  (including the search divider) and 10 pt at the bottom, matching native row origins without
+  adding space after the last row.
+  `SettingsListMetrics` keeps row icons at one size, and `SettingsScopeRow` renders folder and
+  application scope icons consistently across pages.
   A long list whose rows hold no AppKit control can stay a `LazyVStack`.
 
 ### The window-layout editor

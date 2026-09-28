@@ -49,9 +49,13 @@ LaunchServices: its Settings row went with it, so nothing else could clear the c
 keeps a dropped search scope from deleting a working shortcut, and running on unchanged scans too
 covers LaunchServices still resolving an app for a few seconds after it is trashed.
 
-System Settings panes use `boundPaneBundleIDs`; custom commands, quicklinks, window layouts and custom window sizes use their
-stable UUIDs in `boundCustomCommandIDs`, `boundQuicklinkIDs`, `boundWindowLayoutIDs` and
-`boundCustomWindowSizeIDs`. Those four are the per-item case — unlike a fixed catalog, there is no `allCases` to walk — so each needs an index for `start()`
+Window management's shortcuts are also spelled as typeable chords (`ctrl+option+left`) in the opt-in
+[settings file](settings-file.md). `HotKeySpelling` is that grammar; the file applies through
+`setBinding`, so `UserDefaults` stays the one store either way.
+
+System Settings panes use `boundPaneBundleIDs`; custom commands, quicklinks, window layouts, rooms
+and custom window sizes use their stable UUIDs in `boundCustomCommandIDs`, `boundQuicklinkIDs`,
+`boundWindowLayoutIDs`, `boundWindowRoomIDs` and `boundCustomWindowSizeIDs`. Those five are the per-item case — unlike a fixed catalog, there is no `allCases` to walk — so each needs an index for `start()`
 to re-register from
 and to prune bindings whose record was deleted while Tinycast wasn't running. That prune is why
 `QuicklinkStore` loads at launch even when the feature is off
