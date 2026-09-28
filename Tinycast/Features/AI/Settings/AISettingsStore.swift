@@ -47,6 +47,14 @@ final class AISettingsStore {
     var bashTrust: MCPTrust {
         didSet { defaults.set(bashTrust.rawValue, forKey: AppSettingsKey.aiBashTrust.rawValue) }
     }
+    /// Reads are safe on any Mac; it is the mutating calls that the trust ladder must consent to.
+    var fileToolEnabled: Bool {
+        didSet { defaults.set(fileToolEnabled, forKey: AppSettingsKey.aiFileToolEnabled.rawValue) }
+    }
+    /// Same ladder as bash; `never` takes the whole Files set back out of the model's menu.
+    var fileToolTrust: MCPTrust {
+        didSet { defaults.set(fileToolTrust.rawValue, forKey: AppSettingsKey.aiFileToolTrust.rawValue) }
+    }
     /// Appended to `AIInstructions.preamble` on every turn, so it is billed on every turn.
     var systemPrompt: String {
         didSet { defaults.set(systemPrompt, forKey: AppSettingsKey.aiSystemPrompt.rawValue) }
@@ -102,6 +110,11 @@ final class AISettingsStore {
             defaults.object(forKey: AppSettingsKey.aiBashToolEnabled.rawValue) as? Bool ?? false
         bashTrust =
             MCPTrust(rawValue: defaults.string(forKey: AppSettingsKey.aiBashTrust.rawValue) ?? "")
+            ?? .ask
+        fileToolEnabled =
+            defaults.object(forKey: AppSettingsKey.aiFileToolEnabled.rawValue) as? Bool ?? true
+        fileToolTrust =
+            MCPTrust(rawValue: defaults.string(forKey: AppSettingsKey.aiFileToolTrust.rawValue) ?? "")
             ?? .ask
         systemPrompt = defaults.string(forKey: AppSettingsKey.aiSystemPrompt.rawValue) ?? ""
         systemPromptEnabled =

@@ -169,6 +169,25 @@ struct AISettingsView: View {
                     Text("Never Allow keeps the tool out entirely.")
                 }
             }
+            Toggle(
+                isOn: Binding(
+                    get: { settings.fileToolEnabled },
+                    set: { core.aiChatCoordinator.setFileToolEnabled($0) }))
+            {
+                SettingsRowTitle(.aiChat, "File tools")
+                Text(
+                    "API models may read, search, write and open files in this account's home "
+                        + "folder. Reads never ask; each write, delete or open asks first, unless "
+                        + "trust below says to stay silent.")
+            }
+            if settings.fileToolEnabled {
+                Picker(selection: $settings.fileToolTrust) {
+                    ForEach(MCPTrust.allCases) { Text($0.title).tag($0) }
+                } label: {
+                    SettingsRowTitle(.aiChat, "File tool trust")
+                    Text("Never Allow keeps the tools out entirely.")
+                }
+            }
         } header: {
             SettingsSectionHeader(.aiChat)
         }

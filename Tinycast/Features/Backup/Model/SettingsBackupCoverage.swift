@@ -114,6 +114,12 @@ enum SettingsBackupCoverage {
             "Arming a shell tool is a capability granted on this Mac; an import must not grant it.",
         AppSettingsKey.aiBashTrust.rawValue:
             "A standing shell consent is only ever given in person, never by an import.",
+        AppSettingsKey.aiFileToolTrust.rawValue:
+            "A standing consent to write, delete or open files is only ever given in person, never "
+                + "by an import.",
+        AppSettingsKey.aiFileToolEnabled.rawValue:
+            "Whether a model may touch this account's files at all is a capability granted in "
+                + "person; an import must not grant it.",
         AppSettingsKey.aiSystemPrompt.rawValue:
             "Standing instructions to a model are the one AI setting that changes every answer; an "
             + "import must not carry them onto another Mac unseen.",

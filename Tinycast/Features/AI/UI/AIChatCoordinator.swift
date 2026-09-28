@@ -16,6 +16,8 @@ final class AIChatCoordinator {
     @ObservationIgnored private var naming: [UUID: Task<Void, Never>] = [:]
     /// Chats whose `bash` calls this session has granted; the flag is the standing one.
     @ObservationIgnored private var bashGrants: Set<UUID> = []
+    /// Chats whose mutating Files calls this session has granted; reads and searches never ask.
+    @ObservationIgnored private var fileGrants: Set<UUID> = []
     /// Owned here rather than on `AppCore`: only this path hands the model a shell.
     private let bashExecutor = BashToolExecutor()
 
@@ -359,10 +361,60 @@ final class AIChatCoordinator {
             if BashToolSchema.isBuiltinTool(call.name) {
                 return await bash.invokeBash(call, in: chatID)
             }
+            if FileSystemToolSchema.isBuiltinTool(call.name) {
+                return await bash.invokeFileTool(call, in: chatID)
+            }
             if AIWebSearch.isBuiltIn(call.name) {
                 return await BraveSearchService.invoke(call)
             }
             return await mcp.invoke(call, in: chatID)
+        }
+    }
+
+    /// The Files built-ins, gated exactly as an MCP tool is; reads and searches never ask.
+    private func invokeFileTool(_ call: AIToolCall, in chatID: UUID) async -> AIToolResult {
+        switch FileSystemToolSchema.parse(call.name, call.arguments) {
+        case .failure(let message): return .failure(call.id, message.message)
+        case .success(let invocation):
+            if FileSystemToolSchema.isMutating(call.name) {
+                guard await permitFileTool(call.name, in: chatID) else {
+                    return .failure(call.id, "The call was not allowed to run.")
+                }
+            }
+            return await FileToolExecutor.run(
+                call, invocation: invocation, root: FileManager.default.homeDirectoryForCurrentUser,
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+        }
+    }
+
+    /// Escape refuses this one call; only this row in Settings can stand `.always` down.
+    private func permitFileTool(_ name: String, in chat: UUID) async -> Bool {
+        switch MCPTrustPolicy.decide(
+            trust: core.aiSettings.fileToolTrust, isGrantedForChat: fileGrants.contains(chat))
+        {
+        case .allow: return true
+        case .refuse: return false
+        case .ask: break
+        }
+        let index = await core.choose(
+            title: "Let the model do this to your files?",
+            message: "\(name)",
+            symbol: "folder",
+            options: [
+                DialogAction(title: "Always Allow"),
+                DialogAction(title: "Allow This Chat"),
+                DialogAction(title: "Don't Allow", role: .cancel),
+            ],
+            defaultIndex: 1)
+        switch index {
+        case 0:
+            core.aiSettings.fileToolTrust = .always
+            return true
+        case 1:
+            fileGrants.insert(chat)
+            return true
+        default:
+            return false
         }
     }
 
@@ -463,7 +515,18 @@ final class AIChatCoordinator {
         {
             armed.append(contentsOf: BashToolSchema.tools)
         }
+        if core.aiSettings.fileToolEnabled, !excluded.contains(FileSystemToolSchema.slug),
+            slug == nil
+        {
+            armed.append(contentsOf: FileSystemToolSchema.tools)
+        }
         return armed
+    }
+
+    /// Off means fully off: no chat grant survives a turn of the flag off.
+    func setFileToolEnabled(_ enabled: Bool) {
+        core.aiSettings.fileToolEnabled = enabled
+        if !enabled { fileGrants = [] }
     }
 
     /// Off means fully off: the registry and its children go, and no chat grant survives.
@@ -477,6 +540,8 @@ final class AIChatCoordinator {
 
     /// Whether the menu shows the built-in's row at all: a tool no one turned on is less.
     var isBashToolArmed: Bool { core.aiSettings.bashToolEnabled }
+    /// Same for the Files built-ins; a chat can still switch them out of its own turns.
+    var isFileToolArmed: Bool { core.aiSettings.fileToolEnabled }
     /// The servers a chat's tools menu offers; empty when MCP is off or nothing is set up.
     var mcpServers: [MCPServer] { core.mcpCoordinator.servers }
 
