@@ -200,6 +200,17 @@ struct AIProviderTests {
                 && !AIModelSelection.api(connection: UUID(), model: "m", effort: nil)
                     .runsItsOwnTools,
             "every other route either runs Tinycast's loop or has nothing to call")
+        let compatible = AIConnection(
+            provider: .anthropicCompatible, models: ["glm-4.6"])
+        expect(
+            compatible.capabilities(for: "glm-4.6").tools,
+            "an Anthropic-compatible endpoint calls tools natively")
+        expect(
+            compatible.capabilities(for: "glm-4.6").images,
+            "and takes the base64 image block a vendor Anthropic endpoint does")
+        expect(
+            !compatible.capabilities(for: "glm-4.6").documents,
+            "but a compatible gateway is refused the PDF part only a vendor can honour")
 
         expect(
             AIRequest(messages: []).tools.isEmpty,
@@ -311,6 +322,12 @@ struct AIProviderTests {
             AIConnection(provider: .anthropic, baseURL: "https://gateway.example", models: ["m"])
                 .reasoningOptions(for: "m") == nil,
             "the Anthropic shape is out of scope whatever it points at")
+        expect(
+            AIConnection(
+                provider: .anthropicCompatible, baseURL: "https://gateway.example/anthropic",
+                models: ["m"]
+            ).reasoningOptions(for: "m") == nil,
+            "so is its third-party compatible kind")
 
         let catalogued = AIConnection(
             id: UUID(), provider: .openRouter, baseURL: "https://gateway.example", models: ["m"],
@@ -342,7 +359,8 @@ struct AIProviderTests {
             (.anthropic, "https://api.anthropic.com/v1/messages"),
             (.gemini, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"),
             (.openRouter, "https://openrouter.ai/api/v1/chat/completions"),
-            (.openAICompatible, "https://api.openai.com/v1/chat/completions")
+            (.openAICompatible, "https://api.openai.com/v1/chat/completions"),
+            (.anthropicCompatible, "https://api.anthropic.com/v1/messages")
         ]
         for (provider, endpoint) in expected {
             let configuration = AIHTTPConfiguration(
@@ -360,6 +378,13 @@ struct AIProviderTests {
         expect(
             explicit.endpointURL.absoluteString == "https://example.com/chat/completions",
             "an explicit completion endpoint is not appended twice")
+        let gateway = AIHTTPConfiguration(
+            provider: .anthropicCompatible,
+            baseURL: URL(string: "https://gateway.example/anthropic")!,
+            model: "model")
+        expect(
+            gateway.endpointURL.absoluteString == "https://gateway.example/anthropic/v1/messages",
+            "a third-party Anthropic-compatible base URL gets the same messages path")
     }
 
     static func modelCatalogBuildsProviderRequests() {
@@ -368,7 +393,8 @@ struct AIProviderTests {
             (.anthropic, "https://api.anthropic.com/v1/models?limit=1000"),
             (.gemini, "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000"),
             (.openRouter, "https://openrouter.ai/api/v1/models/user"),
-            (.openAICompatible, "https://api.openai.com/v1/models")
+            (.openAICompatible, "https://api.openai.com/v1/models"),
+            (.anthropicCompatible, "https://api.anthropic.com/v1/models?limit=1000")
         ]
         for (provider, endpoint) in expected {
             let query = try? AIModelDiscovery.query(
@@ -386,6 +412,13 @@ struct AIProviderTests {
         expect(
             anthropic?.value(forHTTPHeaderField: "x-api-key") == "secret",
             "Anthropic model discovery uses x-api-key authentication")
+        let compatible = try? AIModelDiscovery.query(
+            provider: .anthropicCompatible, baseURL: URL(string: "https://gateway.example")!,
+            apiKey: "secret", appTitle: "Tinycast"
+        ).request
+        expect(
+            compatible?.value(forHTTPHeaderField: "x-api-key") == "secret",
+            "Anthropic-compatible model discovery sends the same Anthropic credentials")
         let gemini = try? AIModelDiscovery.query(
             provider: .gemini, baseURL: URL(string: AIProviderKind.gemini.defaultBaseURL)!,
             apiKey: "secret", appTitle: "Tinycast"
@@ -899,6 +932,11 @@ struct AIProviderTests {
         expect(
             AIBrand.resolve(provider: .anthropic, model: "whatever") == .claude,
             "a vendor endpoint names its brand regardless of the model id")
+        expect(
+            AIBrand.resolve(provider: .anthropicCompatible, model: "zai/glm-4.6") == .zai
+                && AIBrand.resolve(provider: .anthropicCompatible, model: "claude-sonnet-4-6")
+                    == .claude,
+            "a compatible endpoint is known by whichever model it serves")
         expect(
             AIBrand.resolve(provider: .openAICompatible, model: "deepseek-chat") == .deepSeek,
             "a compatible endpoint resolves the brand from the model id")

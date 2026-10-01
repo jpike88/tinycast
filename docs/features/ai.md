@@ -281,9 +281,9 @@ bottom with the model picker. ⌘J hands a Quick AI conversation to the window.
 `AIModelSelection` has seven cases: `.appleIntelligence`, `.codex`, `.claude`, `.grok`, `.openCode`,
 `.cursor` and `.api`.
 The first needs no connection at all. The next five name a model from an installed command and carry
-no credential. `.api` points at one `AIConnection`; `AIProviderKind` exposes four named presets plus a
-custom OpenAI-compatible route. Decoding still accepts the old `.chatGPT` spelling and writes it back
-as `.codex`, so an existing selection survives the rename.
+no credential. `.api` points at one `AIConnection`; `AIProviderKind` exposes four named presets plus
+custom OpenAI-compatible and Anthropic-compatible routes. Decoding still accepts the old `.chatGPT`
+spelling and writes it back as `.codex`, so an existing selection survives the rename.
 
 | Setting | Transport | Default base URL |
 | --- | --- | --- |
@@ -298,6 +298,7 @@ as `.codex`, so an existing selection survives the rename.
 | Google Gemini | Gemini's OpenAI-compatible API | `https://generativelanguage.googleapis.com/v1beta/openai` |
 | OpenRouter | OpenAI-compatible | `https://openrouter.ai/api/v1` |
 | OpenAI Compatible | OpenAI-compatible | user-editable |
+| Anthropic Compatible | Anthropic Messages | user-editable |
 
 The base URL stays editable for every preset because gateways and organization proxies are legitimate
 destinations. `AIHTTPConfiguration.endpointURL` accepts a complete endpoint or appends the transport's
@@ -521,8 +522,9 @@ active label, glyph and disclosure chevron layered over `BarButton` — which is
 type filter is now, so the two header menus hover and open identically. Its menu is the palette's
 fourth `OpenMenu` case, `.topTrailing` like the type filter, and it opens on the selected model. Each
 row leads with the vendor's mark — `AIBrand` resolves it from a native connection's provider, or for
-OpenRouter and OpenAI-compatible endpoints from the model id (`anthropic/claude-…`, `deepseek-chat`,
-`o4-mini`). The marks are ~300 B–2 KB monochrome template SVGs in `Assets.xcassets` (`AIBrand*`),
+OpenRouter and the OpenAI-compatible and Anthropic-compatible endpoints from the model id
+(`anthropic/claude-…`, `deepseek-chat`, `o4-mini`). The marks are ~300 B–2 KB monochrome template SVGs
+in `Assets.xcassets` (`AIBrand*`),
 thirteen from Simple Icons, Grok and Z.ai from `@lobehub/icons` and OpenCode drawn after its own, so
 they tint with the row like a symbol. OpenCode's inner block is the one second tone among them, and
 is drawn with `opacity`: the asset compiler drops `fill-opacity` without a warning. An
@@ -706,6 +708,7 @@ transport code at all.
 | OpenAI | a `web_search` tool call on the loop — Brave Search reads `Settings` for its key | `image_url` part, assumed supported | `file` part with `filename` and a `file_data` data URL | `tools` + `role: "tool"` turns |
 | Gemini / compatible | a `web_search` tool call on the loop — Brave Search reads `Settings` for its key | `image_url` part, assumed supported | never — a gateway that has not implemented the part bills the upload before rejecting it | `tools` + `role: "tool"` turns |
 | Anthropic | not offered | base64 `image` block | base64 `document` block, ahead of the text block | `tools` + `tool_use` / `tool_result` blocks |
+| Anthropic Compatible | not offered | base64 `image` block, assumed supported | never — an endpoint that has not implemented the part bills the upload before rejecting it | `tools` + `tool_use` / `tool_result` blocks |
 
 A search is part of the reply, not a status: `item/started` for a `webSearch` item appends a
 `ChatSearch` to the streaming message pinned at the text length so far, `item/completed` (or the

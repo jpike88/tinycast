@@ -633,20 +633,15 @@ run chat-markdown-test     Tinycast/Platform/Appearance.swift \
                            Tinycast/Features/AI/Model/MathNode.swift \
                            Tinycast/Features/AI/Model/MathSymbolCatalog.swift \
                            Tinycast/Features/AI/UI/ChatTextHighlight.swift \
-                           Tinycast/Features/AI/UI/ChatMarkdownRenderer.swift
-run file-tool-test         Tinycast/Features/AI/Model/AITool.swift \
-                           Tinycast/Features/AI/Model/JSONValue.swift \
-                           Tinycast/Features/AI/Model/FileSystemToolSchema.swift \
-                           Tinycast/Features/AI/Service/FileToolExecutor.swift
-run file-tool-test         Tinycast/Features/AI/Model/AITool.swift \
-                           Tinycast/Features/AI/Model/JSONValue.swift \
-                           Tinycast/Features/AI/Model/FileSystemToolSchema.swift \
-                           Tinycast/Features/AI/Service/FileToolExecutor.swift
                            Tinycast/Features/AI/UI/ChatMarkdownRenderer.swift \
                            Tinycast/Features/AI/UI/MathAttachmentCell.swift \
                            Tinycast/Features/AI/UI/MathBox.swift \
                            Tinycast/Features/AI/UI/MathFont.swift \
                            Tinycast/Features/AI/UI/MathLayoutEngine.swift
+run file-tool-test         Tinycast/Features/AI/Model/AITool.swift \
+                           Tinycast/Features/AI/Model/JSONValue.swift \
+                           Tinycast/Features/AI/Model/FileSystemToolSchema.swift \
+                           Tinycast/Features/AI/Service/FileToolExecutor.swift
 run mcp-test               Tinycast/Features/Settings/AppSettingsKey.swift \
                            Tinycast/Features/AI/Model/AIConnection.swift \
                            Tinycast/Features/AI/Model/AppleIntelligence.swift \
