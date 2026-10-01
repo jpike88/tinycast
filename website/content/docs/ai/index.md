@@ -28,6 +28,11 @@ it.
 Replies render Markdown. Your own messages stay exactly as you typed them. A reply keeps streaming
 even if you close the palette or open another screen, and it is saved when it finishes.
 
+Replies render math too. LaTeX between `\(` and `\)`, or between single `$` signs, sits in the line;
+between `\[` and `\]`, or `$$` signs, it gets a line of its own. An equation that is still arriving
+shows as `…` until it is complete, and copying one copies its LaTeX. Prices like "$5 and $10" stay
+as they are written.
+
 The model name sits at the right of the header. Click it to switch models, or to change the reasoning
 effort on models that support one. A switch applies to your _next_ message; it never interrupts a
 reply already on its way.
@@ -77,6 +82,19 @@ outright should not be tacked onto an unrelated conversation.
 **Settings → AI → Providers → Manage…** is where models come from. **Default model** below it picks
 one per surface — Quick AI and the AI Chat window — each with its reasoning effort.
 
+The panel lists every provider on the left and shows the selected one on the right, in up to three
+pages:
+
+- **Overview** says whether it is ready, which account it is signed in with, and which command it
+  runs. The account's address is blurred until you click it.
+- **Models** lists everything the provider offers, each with a checkbox. **Ticked models appear in
+  the model picker.** A provider you have not touched lists all of them, including ones it adds
+  later. The default model always stays listed.
+- **Advanced**, for installed tools, is covered below.
+
+Every provider has a switch. **Off keeps it set up but takes its models out of every picker**, so you
+can put an API connection aside without removing it or its key.
+
 ### Apple Intelligence
 
 Runs **on your Mac**. No key, no account, and nothing leaves the machine. When your Mac supports it,
@@ -89,10 +107,20 @@ instead.**
 ### Installed AI: Codex, Claude, Grok, OpenCode and Cursor
 
 If you already use the `codex`, `claude`, `grok`, `opencode` or `agent` (Cursor) command-line tools,
-Tinycast can use them with the account you are signed in to. **Tinycast never asks for or stores their keys.**
+Tinycast can use their existing configuration. Codex also works with a configured API provider that
+does not require OpenAI sign-in. **Tinycast never asks for or stores their keys.**
 
 Each one has its own switch, and all five ship off. The pane shows whether each is ready, missing,
 or needs you to sign in. It links to the install page and can copy the sign-in command for you.
+
+Tinycast finds each command the way your Terminal would. If it finds the wrong copy, or none, open
+the tool's **Advanced** page:
+
+- **Command path** is the command to run instead. Leave it empty to let Tinycast find it. **A path
+  with nothing to run is reported, never quietly replaced** by whatever Tinycast can find.
+- **Variables** are set for that tool each time it starts, such as a proxy or a config folder.
+  Values are kept in your login Keychain. A few names are Tinycast's own, which keep the tool from
+  touching your files, and the row tells you when a value will not be used.
 
 Tinycast uses them as plain chat. Claude, Grok and OpenCode run with tools, file access and shell access
 switched off — unless you have added [MCP servers](/docs/ai/mcp), which Codex and Claude can call

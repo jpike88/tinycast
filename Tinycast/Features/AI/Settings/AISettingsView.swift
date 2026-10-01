@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct AISettingsView: View {
@@ -9,12 +8,6 @@ struct AISettingsView: View {
     @Environment(InstalledAIManager.self) private var installedAI
 
     @State private var providersPresented = false
-    @State private var keyStatuses: [UUID: Bool] = [:]
-    @State private var keyError = false
-    @State private var editor: AIConnectionEditorTarget?
-    @State private var pendingRemoval: AIConnection?
-
-    private let keyStore = KeychainSecretStore.aiAPIKeys
 
     var body: some View {
         @Bindable var appSettings = appSettings
@@ -50,7 +43,7 @@ struct AISettingsView: View {
         .formStyle(.grouped)
         .settingsScrollTarget(.ai)
         .settingsEditorPanel(isPresented: $providersPresented) {
-            providersPanel
+            AIProvidersPanel(onDone: { providersPresented = false })
         }
         .onAppear {
             core.applyInstalledAILifecycle()
@@ -129,6 +122,10 @@ struct AISettingsView: View {
             providers.append(count == 1 ? "1 API connection" : "\(count) API connections")
         }
         return providers.isEmpty ? "No external providers ready" : providers.joined(separator: ", ")
+    }
+
+    private func syncSelection() {
+        settings.reconcile(subscription: subscription, installedAI: installedAI)
     }
 
     private var chatSection: some View {

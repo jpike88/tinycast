@@ -111,6 +111,7 @@ enum Theme {
         /// A `BarButton`'s hover capsule, shared by the footer group and the header's filter.
         static let barButtonHeight: CGFloat = 28
         static let rowIcon: CGFloat = 24
+        static let resultRowIcon: CGFloat = 26
         /// Colour-codes a secondary label, as Calendar.app marks an event's calendar.
         static let colorDot: CGFloat = 8
         /// The calendar-colour bar between a meeting row's icon and its title.
@@ -245,6 +246,14 @@ enum Theme {
         static let layoutPositionStroke: CGFloat = 1.5
         /// A position cell's clickable row; the glyph floats inside it, so the whole cell hits.
         static let layoutPositionCell: CGFloat = 34
+        /// AI Providers: Mail's Accounts shape, a provider list beside the selected one's detail.
+        static let aiProvidersPanel = CGSize(width: 840, height: 520)
+        static let aiProvidersList: CGFloat = 262
+        /// What the system leaves either side of a segment's label once the control has settled.
+        static let segmentLabelInset: CGFloat = 13
+        static let aiVariableName: CGFloat = 170
+        /// A Codex usage window's meter, beside its "72% left" readout.
+        static let aiUsageBar: CGFloat = 110
         /// Settings editor modals (Custom Commands, Snippets): fixed width, intrinsic height.
         static let editorSheetWidth: CGFloat = 480
         /// The multi-line box inside those modals; it scrolls rather than grows the panel.
@@ -428,9 +437,7 @@ enum Theme {
         /// Emoji grid chrome: a quiet tile at rest, with two legible rings on interaction.
         static let emojiCell = ramp(dark: 0.045, light: 0.04)
         static let emojiHoverBorder = ramp(dark: 0.42, light: 0.34)
-        static let emojiSelectionBorder = adaptive(
-            dark: NSColor(srgbRed: 0.96, green: 0.90, blue: 0.72, alpha: 0.92),
-            light: .srgbInk(0, alpha: 0.72))
+        static let emojiSelectionBorder = ramp(dark: 0.92, light: 0.72)
         static let emojiInnerBorder = adaptive(
             dark: .srgbInk(0, alpha: 0.72), light: .srgbInk(1, alpha: 0.72))
         static let menuHover = ramp(dark: 0.10, light: 0.09)

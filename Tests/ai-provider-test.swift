@@ -87,6 +87,7 @@ struct AIProviderTests {
         sseFramesSurviveSplits()
         openAIAndAnthropicStreamsDecode()
         capturedStreamsDecodeHoweverTheyArrive()
+        thinkTagStreamsDecodeHoweverTheyArrive()
         brokenStreamsFailLoudly()
         brandsResolveFromModelIDs()
         requestBodiesCarryDocuments()
@@ -94,6 +95,11 @@ struct AIProviderTests {
         installedCLIStreamsDecode()
         settingsPersistAndRepairSelections()
         installedModelLoadingPreferencePersists()
+        shownModelsFilterThePicker()
+        switchedOffRoutesLeaveTheDefault()
+        installedOverridesPersistAndResolve()
+        aFailedKeychainReadIsNeverSavedOver()
+        aLaunchInheritsTheReadersVariablesNotTinycastsOwn()
         subscriptionSelectionsReconcile()
         onDeviceSelectionsRoundTripAndLead()
         conversationSettingsPersistAndDecide()
@@ -728,6 +734,147 @@ struct AIProviderTests {
         }
     }
 
+    static func thinkTagStreamsDecodeHoweverTheyArrive() {
+        guard let data = FileManager.default.contents(atPath: "Tests/ai-fixtures/openai-think-tags.txt")
+        else {
+            expect(false, "think tags: fixture is readable")
+            return
+        }
+        let whole = decodeAll(data, slice: data.count)
+        expect(whole == decodeAll(data, slice: 7), "think tags: fixture survives 7-byte slices")
+        expect(reasoningText(whole) == "Plan carefully.", "think tags: fixture reasoning is exact")
+        expect(answerText(whole) == "The answer.", "think tags: fixture answer is exact")
+        expect(whole.contains(.thinking), "think tags: fixture surfaces thinking")
+        expect(
+            whole.suffix(2) == [.usage(AIUsage(inputTokens: 5, outputTokens: 9)), .finished],
+            "think tags: fixture keeps usage before completion")
+
+        let content = Array("<think>reason</think>\n\nanswer")
+        for first in 0...content.count {
+            for second in first...content.count {
+                let fragments = [
+                    String(content[..<first]), String(content[first..<second]),
+                    String(content[second...])
+                ]
+                let events = decodeContent(fragments)
+                expect(
+                    reasoningText(events) == "reason" && answerText(events) == "answer",
+                    "think tags: content splits \(first),\(second) preserve reasoning and answer")
+            }
+        }
+        let characters = decodeContent(content.map(String.init))
+        expect(
+            reasoningText(characters) == "reason" && answerText(characters) == "answer",
+            "think tags: one character per delta preserves reasoning and answer")
+        let spaced = decodeContent([" \n", "<think> ", "\n", "reason \n</thi", "nk>\n", "\t", "answer", " \n"]
+        )
+        expect(
+            reasoningText(spaced) == " \nreason \n" && answerText(spaced) == "answer \n",
+            "think tags: only leading tag space and the answer separator are removed")
+        expect(
+            decodeContent(["<think>r</think>answer"])
+                == [.thinking, .reasoning("r"), .text("answer"), .finished],
+            "think tags: a single delta emits reasoning before answer text")
+        for literal in [
+            "<div>x</div>", "<thinking>…", "\n\nHello", "Hello <think>x</think> world",
+            "Hello<think>x</think> world", "</think>answer"
+        ] {
+            let events = decodeContent(literal.map(String.init))
+            expect(
+                answerText(events) == literal && !events.contains(.thinking),
+                "think tags: literal content stays verbatim: \(literal.debugDescription)")
+        }
+        for content in ["<think></think>", "<think> \n\t</think>"] {
+            expect(
+                decodeContent(content.map(String.init)) == [.finished],
+                "think tags: empty or whitespace-only reasoning emits nothing")
+        }
+        let secondBlock = decodeContent(["<think>r</think>", "answer <think>literal</think> world"])
+        expect(
+            answerText(secondBlock) == "answer <think>literal</think> world",
+            "think tags: recognition never resumes after the first block")
+        for done in [true, false] {
+            let unclosed = decodeContent(["<think>reason</thi"], done: done)
+            expect(
+                reasoningText(unclosed) == "reason</thi" && answerText(unclosed).isEmpty,
+                "think tags: unclosed reasoning flushes at \(done ? "DONE" : "EOF")")
+            expect(
+                answerText(decodeContent(["<thi"], done: done)) == "<thi",
+                "think tags: undecided content flushes at \(done ? "DONE" : "EOF")")
+        }
+        var decoder = AIStreamDecoder(shape: .openAICompatible)
+        _ = try? decoder.feed(contentFrame("<thi"))
+        expect((try? decoder.finish()) == [.text("<thi")], "think tags: EOF flushes the held prefix")
+        expect((try? decoder.finish()) == [], "think tags: EOF never flushes twice")
+        var terminated = AIStreamDecoder(shape: .openAICompatible)
+        _ = try? terminated.feed(contentFrame("<think>r</thi"))
+        expect(
+            (try? terminated.feed(Data("data: [DONE]\n\n".utf8)))
+                == [.thinking, .reasoning("</thi"), .finished],
+            "think tags: DONE flushes reasoning before completion")
+        expect((try? terminated.finish()) == [], "think tags: EOF after DONE never flushes twice")
+        let tools = Data(
+            """
+            data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"read","arguments":"{}"}}]}}]}
+
+            data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
+
+            data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3}}
+
+            data: [DONE]
+
+            """.utf8)
+        let toolEvents = decodeAll(contentFrame("<think>r</think>") + tools, slice: 7)
+        expect(
+            toolEvents == [
+                .thinking, .reasoning("r"),
+                .toolCallRequested(AIToolCall(id: "c1", name: "read", arguments: "{}")),
+                .usage(AIUsage(inputTokens: 2, outputTokens: 3)), .finished
+            ],
+            "think tags: reasoning precedes tools without changing tool, usage or completion order")
+        let native = Data(
+            """
+            data: {"choices":[{"delta":{"reasoning_content":"native"}}]}
+
+            data: {"choices":[{"delta":{"content":"answer"}}]}
+
+            data: [DONE]
+
+            """.utf8)
+        expect(
+            decodeAll(native, slice: 7) == [.thinking, .reasoning("native"), .text("answer"), .finished],
+            "think tags: reasoning_content retains its original event sequence")
+    }
+
+    private static func contentFrame(_ content: String) -> Data {
+        guard let encoded = try? JSONEncoder().encode(content),
+            let quoted = String(bytes: encoded, encoding: .utf8)
+        else {
+            preconditionFailure("A content string must encode as JSON")
+        }
+        return Data("data: {\"choices\":[{\"delta\":{\"content\":\(quoted)}}]}\n\n".utf8)
+    }
+
+    private static func decodeContent(_ fragments: [String], done: Bool = true) -> [AIStreamEvent] {
+        var data = fragments.reduce(into: Data()) { $0 += contentFrame($1) }
+        if done { data += Data("data: [DONE]\n\n".utf8) }
+        return decodeAll(data, slice: max(1, data.count))
+    }
+
+    private static func reasoningText(_ events: [AIStreamEvent]) -> String {
+        events.compactMap { event -> String? in
+            if case .reasoning(let text) = event { return text }
+            return nil
+        }.joined()
+    }
+
+    private static func answerText(_ events: [AIStreamEvent]) -> String {
+        events.compactMap { event -> String? in
+            if case .text(let text) = event { return text }
+            return nil
+        }.joined()
+    }
+
     private static func decodeAll(_ data: Data, slice: Int) -> [AIStreamEvent] {
         var decoder = AIStreamDecoder(shape: .openAICompatible)
         var events: [AIStreamEvent] = []
@@ -1021,6 +1168,193 @@ struct AIProviderTests {
         expect(
             !reopened.enabledInstalledProviders.contains(.openCode),
             "a provider toggle survives a restart")
+    }
+
+    static func installedOverridesPersistAndResolve() {
+        let suite = "AIProviderTests.installedOverrides"
+        let defaults = isolatedDefaults(suite)
+        defer { discardSuite(suite, defaults) }
+        let kept = KeptVariables()
+        let environmentStore = InstalledAIEnvironmentStore(
+            values: { kept.values[$0] ?? [:] }, save: { kept.values[$1] = $0 })
+        let store = AISettingsStore(defaults: defaults, environmentStore: environmentStore)
+        expect(store.launch(for: .codex) == InstalledAILaunch(), "a tool left alone has no override")
+        store.setCommandPath("  ~/bin/codex \n", for: .codex)
+        expect(store.override(for: .codex).commandPath == "~/bin/codex", "a path is kept trimmed")
+        expect(store.launchRevisions[.codex] == 1, "and setting it counts as a change to the launch")
+        store.setCommandPath("~/bin/codex", for: .codex)
+        expect(store.launchRevisions[.codex] == 1, "the same path again is no change")
+        try? store.setEnvironment(
+            [
+                InstalledAIVariable(name: "HTTPS_PROXY", value: "http://127.0.0.1:9"),
+                InstalledAIVariable(name: "HTTPS_PROXY", value: "a second one"),
+                InstalledAIVariable(name: "not a name", value: "x"),
+                InstalledAIVariable(name: "CODEX_HOME", value: "/tmp/home")
+            ], for: .codex)
+        expect(
+            store.override(for: .codex).environmentNames == ["HTTPS_PROXY", "CODEX_HOME"],
+            "variables keep their order, without a repeated or an unusable name")
+        expect(
+            defaults.data(forKey: AppSettingsKey.aiInstalledOverrides.rawValue)
+                .map { String(decoding: $0, as: UTF8.self) }?.contains("127.0.0.1") == false,
+            "and no value is written to settings")
+        let reopened = AISettingsStore(defaults: defaults, environmentStore: environmentStore)
+        expect(
+            reopened.launch(for: .codex)
+                == InstalledAILaunch(
+                    commandPath: "~/bin/codex",
+                    environment: ["HTTPS_PROXY": "http://127.0.0.1:9", "CODEX_HOME": "/tmp/home"]),
+            "a launch after a restart has the path and the values")
+        expect(
+            (try? reopened.environment(for: .codex))?.map(\.name) == ["HTTPS_PROXY", "CODEX_HOME"],
+            "and the editor lists them in the order they were entered")
+        reopened.setCommandPath("", for: .codex)
+        try? reopened.setEnvironment([], for: .codex)
+        expect(
+            defaults.object(forKey: AppSettingsKey.aiInstalledOverrides.rawValue) == nil
+                && kept.values[.codex]?.isEmpty == true,
+            "clearing both leaves nothing stored")
+
+        let home = NSHomeDirectory()
+        let present: (String) -> Bool = { $0 == home + "/bin/codex" }
+        expect(InstalledAILaunch().command(isExecutable: present) == .automatic, "no path looks up")
+        expect(
+            InstalledAILaunch(commandPath: "~/bin/codex").command(isExecutable: present)
+                == .executable(URL(fileURLWithPath: home + "/bin/codex")),
+            "a path under the home folder may be written with a tilde")
+        expect(
+            InstalledAILaunch(commandPath: "/opt/none/codex").command(isExecutable: present)
+                == .missing(path: "/opt/none/codex"),
+            "a path with nothing to run is reported, never replaced by a lookup")
+        expect(
+            InstalledAILaunch(commandPath: "codex").command(isExecutable: { _ in true })
+                == .missing(path: "codex"),
+            "a bare name is not a path")
+    }
+
+    static func aFailedKeychainReadIsNeverSavedOver() {
+        let suite = "AIProviderTests.failedKeychainRead"
+        let defaults = isolatedDefaults(suite)
+        defer { discardSuite(suite, defaults) }
+        let kept = KeptVariables()
+        kept.values[.claude] = ["HTTPS_PROXY": "http://127.0.0.1:9"]
+        let working = InstalledAIEnvironmentStore(
+            values: { kept.values[$0] ?? [:] }, save: { kept.values[$1] = $0 })
+        try? AISettingsStore(defaults: defaults, environmentStore: working).setEnvironment(
+            [InstalledAIVariable(name: "HTTPS_PROXY", value: "http://127.0.0.1:9")], for: .claude)
+        let locked = InstalledAIEnvironmentStore(
+            values: { _ in throw KeychainUnreadable() }, save: { kept.values[$1] = $0 })
+        let store = AISettingsStore(defaults: defaults, environmentStore: locked)
+        expect(
+            (try? store.environment(for: .claude)) == nil,
+            "a read that fails is an error, never a list of names without values")
+        expect(
+            (try? store.setEnvironment(
+                [InstalledAIVariable(name: "HTTPS_PROXY", value: "")], for: .claude)) == nil,
+            "and saving over values that could not be read fails")
+        expect(
+            kept.values[.claude] == ["HTTPS_PROXY": "http://127.0.0.1:9"],
+            "so the stored value survives")
+        expect(
+            store.launch(for: .claude).environment.isEmpty,
+            "a launch that cannot read the values starts without them")
+    }
+
+    static func aLaunchInheritsTheReadersVariablesNotTinycastsOwn() {
+        let launch = InstalledAILaunch(
+            environment: [
+                "PATH": "/reader/bin", "HTTPS_PROXY": "proxy", "NO_COLOR": "0",
+                "OPENCODE_CONFIG_CONTENT": "{}", "TC_MCP_0_0": "stolen", "1BAD": "x"
+            ])
+        let inherited = launch.inherited(
+            for: .openCode, base: ["PATH": "/usr/bin", "HOME": "/Users/reader", "NO_COLOR": "1"])
+        expect(
+            inherited["PATH"] == "/reader/bin" && inherited["HTTPS_PROXY"] == "proxy"
+                && inherited["HOME"] == "/Users/reader",
+            "the reader's variables lie over the app's own")
+        expect(
+            inherited["OPENCODE_CONFIG_CONTENT"] == nil && inherited["TC_MCP_0_0"] == nil
+                && inherited["NO_COLOR"] == "1" && inherited["1BAD"] == nil,
+            "but never one Tinycast sets itself, nor one that is not a variable name")
+        expect(
+            launch.inherited(for: .claude, base: [:])["OPENCODE_CONFIG_CONTENT"] == "{}",
+            "a name only another tool reserves is an ordinary variable here")
+        expect(
+            InstalledAIKind.allCases.allSatisfy { kind in
+                kind.managedEnvironment.keys.allSatisfy(kind.isManagedVariable)
+            },
+            "every variable a tool is launched with is one the reader cannot replace")
+    }
+
+    static func switchedOffRoutesLeaveTheDefault() {
+        let suite = "AIProviderTests.disabledRoutes"
+        let defaults = isolatedDefaults(suite)
+        defer { discardSuite(suite, defaults) }
+        let store = AISettingsStore(defaults: defaults)
+        let first = AIConnection(provider: .openRouter, models: ["first-model"])
+        let second = AIConnection(provider: .gemini, models: ["second-model"])
+        store.save(first)
+        store.save(second)
+        expect(store.defaultModel?.source == .api(first.id), "the first connection is the default")
+        store.setRoute(.api(first.id), enabled: false)
+        expect(
+            store.defaultModel?.source == .api(second.id),
+            "switching the default's connection off moves the default to one still on")
+        let reopened = AISettingsStore(defaults: defaults)
+        expect(
+            !reopened.isRouteEnabled(.api(first.id)) && reopened.isRouteEnabled(.api(second.id)),
+            "a switched-off connection stays off after a restart")
+        reopened.setRoute(.appleIntelligence, enabled: false)
+        expect(
+            !reopened.isRouteEnabled(.appleIntelligence),
+            "the on-device model can be switched off like a connection")
+        reopened.setRoute(.api(first.id), enabled: true)
+        reopened.removeConnection(id: second.id)
+        expect(
+            reopened.defaultModel?.source == .api(first.id),
+            "with the other one gone, the connection switched back on becomes the default")
+        reopened.removeConnection(id: first.id)
+        expect(
+            !reopened.disabledRoutes.contains(AIModelSource.api(first.id).storageKey),
+            "removing a connection forgets that it was switched off")
+    }
+
+    static func shownModelsFilterThePicker() {
+        let suite = "AIProviderTests.shownModels"
+        let defaults = isolatedDefaults(suite)
+        defer { discardSuite(suite, defaults) }
+        let store = AISettingsStore(defaults: defaults)
+        let available = ["a", "b", "c"]
+        expect(
+            available.allSatisfy { store.isModelShown($0, in: .openCode) },
+            "a route nobody has trimmed lists every model")
+        store.setModel("b", shown: false, in: .openCode, available: available)
+        let reopened = AISettingsStore(defaults: defaults)
+        expect(
+            reopened.isModelShown("a", in: .openCode) && !reopened.isModelShown("b", in: .openCode),
+            "an unticked model stays out of the picker after a restart")
+        expect(
+            !reopened.isModelShown("d", in: .openCode),
+            "a trimmed route does not list a model it adds later")
+        expect(
+            reopened.isModelShown("b", in: .claude),
+            "trimming one route leaves the others listing everything")
+        reopened.setModel("b", shown: true, in: .openCode, available: available)
+        expect(
+            reopened.shownModels[AIModelSource.openCode.storageKey] == nil
+                && reopened.isModelShown("d", in: .openCode),
+            "ticking every model back returns the route to listing all, later ones included")
+        reopened.hideAllModels(in: .openCode)
+        expect(
+            available.allSatisfy { !reopened.isModelShown($0, in: .openCode) },
+            "Hide All leaves nothing but the default listed")
+        let connection = AIConnection(provider: .openRouter, models: ["x", "y"])
+        reopened.save(connection)
+        reopened.setModel("y", shown: false, in: .api(connection.id), available: connection.models)
+        reopened.removeConnection(id: connection.id)
+        expect(
+            reopened.shownModels[AIModelSource.api(connection.id).storageKey] == nil,
+            "removing a connection forgets which of its models were shown")
     }
 
     static func subscriptionSelectionsReconcile() {
@@ -1590,3 +1924,10 @@ private func isolatedDefaults(_ name: String) -> UserDefaults {
     defaults.removePersistentDomain(forName: name)
     return defaults
 }
+
+/// Stands in for the Keychain: what a harness saved, read back the way a launch would.
+private final class KeptVariables: @unchecked Sendable {
+    var values: [InstalledAIKind: [String: String]] = [:]
+}
+
+private struct KeychainUnreadable: Error {}
