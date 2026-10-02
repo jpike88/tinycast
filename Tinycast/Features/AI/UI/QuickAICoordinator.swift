@@ -44,12 +44,13 @@ final class QuickAICoordinator {
         }
         chat.startNewChat()
         paletteCoordinator.showPalette(mode: .ai)
-        send(prompt)
+        // The question exists as a sent message now; leaving it as the composer draft would resend it.
+        if send(prompt) { palette.query = "" }
     }
 
     /// Off leaves the screen too, so the palette never shows a feature that is gone.
     func leave() {
-        if palette.mode == .ai || palette.mode == .aiHistory { palette.prepare(mode: .launcher) }
+        if palette.mode.isAI { palette.prepare(mode: .launcher) }
     }
 
     /// A file pasted at the launcher belongs in Quick AI, never in a search for its name.

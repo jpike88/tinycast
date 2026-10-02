@@ -2,6 +2,9 @@ import Foundation
 
 /// Finds a user's CLI the way their Terminal would; the app's own PATH is Finder's.
 enum ExecutableLocator {
+    /// Homebrew's bin dirs. Neither is on the PATH an app launch exports, and `env node`
+    /// shebangs die without one; every spawned child PATH must reach them.
+    nonisolated static let brewPaths = ["/opt/homebrew/bin", "/usr/local/bin"]
     /// `extraHomePaths` are home-relative executable paths for installs that own no shared `bin`.
     nonisolated static func locate(
         _ command: String,
@@ -24,7 +27,7 @@ enum ExecutableLocator {
         inherited: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String: String] {
         let paths =
-            [executable.deletingLastPathComponent().path, "/opt/homebrew/bin", "/usr/local/bin"]
+            [executable.deletingLastPathComponent().path] + brewPaths
             + [inherited["PATH"] ?? "/usr/bin:/bin"]
         return
             inherited
@@ -39,7 +42,7 @@ enum ExecutableLocator {
         var candidates = (environment["PATH"] ?? "")
             .split(separator: ":")
             .map { URL(fileURLWithPath: String($0)).appending(path: command) }
-        candidates += ["/opt/homebrew/bin", "/usr/local/bin"].map {
+        candidates += brewPaths.map {
             URL(fileURLWithPath: $0).appending(path: command)
         }
         candidates += [
@@ -65,7 +68,7 @@ enum ExecutableLocator {
         FileManager.default.isExecutableFile(atPath: url.path)
     }
 
-    /// `-i` reads the rc file that puts a version manager on PATH; a watchdog bounds a hang.
+    /// Sources the rc that puts a version manager on PATH; a watchdog bounds a hang.
     nonisolated static func shellLookup(_ command: String, shell: URL) async -> String? {
         await Task.detached {
             let process = Process()
@@ -108,13 +111,21 @@ enum ExecutableLocator {
         case "fish":
             let script = #"printf '\#(answerMarker)%s\n' (command -v -- $argv[1])"#
             return (shell, ["-ilc", script, command])
-        case "zsh", "bash", "sh", "ksh", "dash":
-            let script = #"printf '\#(answerMarker)%s\n' "$(command -v -- "$1")""#
-            return (shell, ["-ilc", script, "tinycast-locator", command])
+        // An interactive child wedges in the tty's foreground-group handshake when the caller
+        // owns a terminal, so the rc that puts a version manager on PATH is sourced by name.
+        case "zsh":
+            let rc = "${ZDOTDIR:-$HOME}/.zshrc"
+            let script = "test -r \"\(rc)\" && . \"\(rc)\"\n" + posixScript
+            return (shell, ["-lc", script, "tinycast-locator", command])
+        case "bash", "sh", "ksh", "dash":
+            return (shell, ["-lc", posixScript, "tinycast-locator", command])
         default:
             return lookup(command, in: URL(fileURLWithPath: "/bin/zsh"))
         }
     }
+
+    nonisolated private static let posixScript =
+        #"printf '\#(answerMarker)%s\n' "$(command -v -- "$1")""#
 
     nonisolated private static func loginShell() -> URL {
         guard let entry = getpwuid(getuid()), let shell = entry.pointee.pw_shell else {

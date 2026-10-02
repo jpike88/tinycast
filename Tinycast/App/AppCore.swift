@@ -533,6 +533,7 @@ final class AppCore {
         mcpOAuth.stop()
         mcp.stop()
         installedAI.stop()
+        aiChatCoordinator.prepareForTermination()
     }
 
     /// Only the tool whose own path or variables changed is checked again; the rest keep running.

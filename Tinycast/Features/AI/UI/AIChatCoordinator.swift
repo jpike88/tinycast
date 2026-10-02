@@ -14,6 +14,12 @@ final class AIChatCoordinator {
     private let window: AppWindowController
     /// Chats with a title request in flight, so a quick second reply never asks twice.
     @ObservationIgnored private var naming: [UUID: Task<Void, Never>] = [:]
+    /// Chats whose `bash` calls this session has granted; the flag is the standing one.
+    @ObservationIgnored private var bashGrants: Set<UUID> = []
+    /// Chats whose mutating Files calls this session has granted; reads and searches never ask.
+    @ObservationIgnored private var fileGrants: Set<UUID> = []
+    /// Owned here rather than on `AppCore`: only this path hands the model a shell.
+    private let bashExecutor = BashToolExecutor()
 
     init(
         chats: AIChatSurfacesState, settings: AppSettings, appIndex: AppIndex,
@@ -60,6 +66,11 @@ final class AIChatCoordinator {
             let cutoff = core.aiSettings.retention.cutoff(from: Date())
         else { return }
         core.chatHistory.prune(before: cutoff)
+    }
+
+    /// Quit: background commands take their children with them.
+    func prepareForTermination() {
+        bashExecutor.stopAll()
     }
 
     // MARK: - The window
@@ -286,6 +297,29 @@ final class AIChatCoordinator {
         core.aiSettings.webSearchEnabled && capabilities(for: chat).webSearch
     }
 
+    /// Whether a prompt may reach a search engine at all: natively, or through the built-in tool.
+    func searchIsReachable(in chat: AIChatState) -> Bool {
+        let can = capabilities(for: chat)
+        guard core.aiSettings.webSearchEnabled else { return false }
+        return can.webSearch || searchTool(for: chat) != nil
+    }
+
+    /// Whether the composer offers the toggle: routes with native search, plus every HTTP route
+    /// the tool loop could arm. The three CLIs whose own client runs tools can take none.
+    func searchToggleAvailable(in chat: AIChatState) -> Bool {
+        let can = capabilities(for: chat)
+        if can.webSearch { return true }
+        return can.tools && !(model(for: chat)?.runsItsOwnTools == true)
+    }
+
+    /// On a route with no native search, the same toggle arms Tinycast's own `web_search` tool,
+    /// which the loop executes against Brave Search; OpenRouter keeps its own layer.
+    private func searchTool(for chat: AIChatState) -> AITool? {
+        let can = capabilities(for: chat)
+        guard can.tools, !can.webSearch, core.aiSettings.webSearchEnabled else { return nil }
+        return AIWebSearch.tool()
+    }
+
     private var instructions: String? {
         AIInstructions.compose(
             userPrompt: core.aiSettings.systemPrompt,
@@ -317,13 +351,163 @@ final class AIChatCoordinator {
     private func toolAware(
         _ provider: any AIProvider, scopedTo slug: String?, in chat: AIChatState
     ) -> any AIProvider {
-        let tools = tools(for: chat, scopedTo: slug)
+        var tools = tools(for: chat, scopedTo: slug)
+        if let searchTool = searchTool(for: chat) { tools.insert(searchTool, at: 0) }
         guard capabilities(for: chat).tools, !tools.isEmpty else { return provider }
         let chatID = chat.session.id
         return AIToolLoopProvider(
             base: provider, tools: tools, maxRounds: core.aiSettings.toolRounds.limit
-        ) { [mcp = core.mcpCoordinator] call in
-            await mcp.invoke(call, in: chatID)
+        ) { [mcp = core.mcpCoordinator, bash = self] call in
+            if BashToolSchema.isBuiltinTool(call.name) {
+                return await bash.invokeBash(call, in: chatID)
+            }
+            if FileSystemToolSchema.isBuiltinTool(call.name) {
+                return await bash.invokeFileTool(call, in: chatID)
+            }
+            if AIWebSearch.isBuiltIn(call.name) {
+                return await BraveSearchService.invoke(call)
+            }
+            if CalcToolSchema.isBuiltIn(call.name) {
+                return await bash.invokeCalc(call)
+            }
+            return await mcp.invoke(call, in: chatID)
+        }
+    }
+
+    /// The Files built-ins, gated exactly as an MCP tool is; reads and searches never ask.
+    private func invokeFileTool(_ call: AIToolCall, in chatID: UUID) async -> AIToolResult {
+        switch FileSystemToolSchema.parse(call.name, call.arguments) {
+        case .failure(let message): return .failure(call.id, message.message)
+        case .success(let invocation):
+            if FileSystemToolSchema.isMutating(call.name) {
+                guard await permitFileTool(call.name, in: chatID) else {
+                    return .failure(call.id, "The call was not allowed to run.")
+                }
+            }
+            return await FileToolExecutor.run(
+                call, invocation: invocation, root: FileManager.default.homeDirectoryForCurrentUser,
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+        }
+    }
+
+    /// Escape refuses this one call; only this row in Settings can stand `.always` down.
+    private func permitFileTool(_ name: String, in chat: UUID) async -> Bool {
+        switch MCPTrustPolicy.decide(
+            trust: core.aiSettings.fileToolTrust, isGrantedForChat: fileGrants.contains(chat))
+        {
+        case .allow: return true
+        case .refuse: return false
+        case .ask: break
+        }
+        let index = await core.choose(
+            title: "Let the model do this to your files?",
+            message: "\(name)",
+            symbol: "folder",
+            options: [
+                DialogAction(title: "Always Allow"),
+                DialogAction(title: "Allow This Chat"),
+                DialogAction(title: "Don't Allow", role: .cancel),
+            ],
+            defaultIndex: 1)
+        switch index {
+        case 0:
+            core.aiSettings.fileToolTrust = .always
+            return true
+        case 1:
+            fileGrants.insert(chat)
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Pure and consent-free: nothing leaves the Mac, nothing on disk changes.
+    private func invokeCalc(_ call: AIToolCall) -> AIToolResult {
+        CalcToolExecutor.invoke(
+            call, rates: core.currencyRates.rates, region: RegionCurrency.code,
+            now: Date(), calendar: .current)
+    }
+
+    /// The shell the model may call, gated and bounded exactly as an MCP tool is.
+    private func invokeBash(_ call: AIToolCall, in chatID: UUID) async -> AIToolResult {
+        if call.name == BashToolSchema.toolName {
+            switch BashToolSchema.parse(call.arguments) {
+            case .failure(let message): return .failure(call.id, message.message)
+            case .success(let invocation):
+                let cwd: URL
+                switch BashToolSchema.resolveCWD(
+                    invocation, homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+                {
+                case .failure(let message): return .failure(call.id, message.message)
+                case .success(let resolved): cwd = resolved
+                }
+                guard await permitBash(invocation.command, in: chatID, isBackground: invocation.isBackground)
+                else { return .failure(call.id, "The command was not allowed to run.") }
+                if invocation.isBackground {
+                    let id = bashExecutor.startBackground(command: invocation.command, cwd: cwd)
+                    return AIToolResult(
+                        callID: call.id,
+                        content:
+                            "Started in the background as \(id). Read its output with "
+                            + "\(BashToolSchema.getOutputToolName) and stop it with "
+                            + "\(BashToolSchema.killTaskToolName).",
+                        isError: false)
+                }
+                let execution = await BashToolExecutor.run(
+                    invocation: invocation, workingDirectory: cwd)
+                return AIToolResult(
+                    callID: call.id, content: execution.content, isError: false)
+            }
+        }
+        switch BashToolSchema.parseTaskID(call.arguments) {
+        case .failure(let message): return .failure(call.id, message.message)
+        case .success(let id):
+            if call.name == BashToolSchema.getOutputToolName {
+                guard let report = bashExecutor.output(id: id) else {
+                    return .failure(call.id, "No task named \(id) is registered.")
+                }
+                return AIToolResult(callID: call.id, content: report, isError: false)
+            }
+            // kill_task: a companion can never name a process outside its own registry.
+            guard let report = bashExecutor.kill(id: id) else {
+                return .failure(call.id, "No task named \(id) is registered.")
+            }
+            return AIToolResult(callID: call.id, content: report, isError: false)
+        }
+    }
+
+    /// Escape refuses this one call; only this row in Settings can stand `.always` down.
+    private func permitBash(_ command: String, in chat: UUID, isBackground: Bool) async -> Bool {
+        switch MCPTrustPolicy.decide(
+            trust: core.aiSettings.bashTrust, isGrantedForChat: bashGrants.contains(chat))
+        {
+        case .allow: return true
+        case .refuse: return false
+        case .ask: break
+        }
+        let shown =
+            command.count > 800
+            ? String(command.prefix(800)) + "…" : command
+        let choices: [MCPTrustChoice] = [.always, .thisChat, .refuse]
+        let index = await core.choose(
+            title: isBackground ? "Start this command in the background?" : "Run this command?",
+            message: "\(shown)",
+            symbol: "terminal",
+            options: [
+                DialogAction(title: "Always Allow"),
+                DialogAction(title: "Allow This Chat"),
+                DialogAction(title: "Don't Allow", role: .cancel),
+            ],
+            defaultIndex: 1)
+        switch choices.indices.contains(index) ? choices[index] : .refuse {
+        case .always:
+            core.aiSettings.bashTrust = .always
+            return true
+        case .thisChat:
+            bashGrants.insert(chat)
+            return true
+        case .refuse:
+            return false
         }
     }
 
@@ -331,12 +515,44 @@ final class AIChatCoordinator {
     private func tools(for chat: AIChatState, scopedTo slug: String?) -> [AITool] {
         guard chat.toolScope.isEnabled else { return [] }
         let excluded = chat.toolScope.excluded
-        return core.mcpCoordinator.tools(scopedTo: slug).filter { tool in
+        var armed = core.mcpCoordinator.tools(scopedTo: slug).filter { tool in
             guard let route = MCPToolName.parse(tool.name) else { return true }
             return !excluded.contains(route.slug)
         }
+        // Armed on API routes only, at large or narrowed to it; a named server says otherwise.
+        armed.append(CalcToolSchema.tool())
+        if core.aiSettings.bashToolEnabled, !excluded.contains(BashToolSchema.slug),
+            slug == nil
+        {
+            armed.append(contentsOf: BashToolSchema.tools)
+        }
+        if core.aiSettings.fileToolEnabled, !excluded.contains(FileSystemToolSchema.slug),
+            slug == nil
+        {
+            armed.append(contentsOf: FileSystemToolSchema.tools)
+        }
+        return armed
     }
 
+    /// Off means fully off: no chat grant survives a turn of the flag off.
+    func setFileToolEnabled(_ enabled: Bool) {
+        core.aiSettings.fileToolEnabled = enabled
+        if !enabled { fileGrants = [] }
+    }
+
+    /// Off means fully off: the registry and its children go, and no chat grant survives.
+    func setBashToolEnabled(_ enabled: Bool) {
+        core.aiSettings.bashToolEnabled = enabled
+        if !enabled {
+            bashExecutor.stopAll()
+            bashGrants = []
+        }
+    }
+
+    /// Whether the menu shows the built-in's row at all: a tool no one turned on is less.
+    var isBashToolArmed: Bool { core.aiSettings.bashToolEnabled }
+    /// Same for the Files built-ins; a chat can still switch them out of its own turns.
+    var isFileToolArmed: Bool { core.aiSettings.fileToolEnabled }
     /// The servers a chat's tools menu offers; empty when MCP is off or nothing is set up.
     var mcpServers: [MCPServer] { core.mcpCoordinator.servers }
 
@@ -404,7 +620,7 @@ final class AIChatCoordinator {
             stagedBytes: chat.pendingAttachments.reduce(0) { $0 + $1.payload.byteCount },
             usage: chat.usage,
             systemPrompt: core.aiSettings.systemPromptEnabled,
-            webSearch: core.aiSettings.webSearchEnabled && can.webSearch,
+            webSearch: searchIsReachable(in: chat),
             toolServers: can.tools && scope.isEnabled
                 ? mcpServers.count { scope.allows($0.slug) } : 0)
     }
@@ -536,10 +752,11 @@ final class AIChatCoordinator {
             installedAI: core.installedAI)
     }
 
-    /// The chat's own model while it is still reachable; otherwise the default a new chat takes.
+    /// The chat's own model while it is still reachable; otherwise the default its surface names.
     func model(for chat: AIChatState) -> AIModelSelection? {
         if let own = chat.session.model, isReachable(own) { return own }
-        return core.aiSettings.defaultModel
+        return chats.isQuickAI(chat)
+            ? core.aiSettings.quickAIDefaultModel : core.aiSettings.defaultModel
     }
 
     /// A route removed in Settings falls back to the default rather than failing the chat.
@@ -620,20 +837,20 @@ final class AIChatCoordinator {
     func warmUpModelList() {
         guard let stored = core.aiSettings.defaultModel else {
             prepareModelSwitcher()
-            core.aiSettings.resolveDefaultModel()
+            core.aiSettings.resolveDefaultModels()
             return
         }
         // Only an installed route needs checking; every other one is already settled on disk.
         if stored.source.installedKind != nil { prepareModelSwitcher() }
     }
 
-    /// The chat keeps the pick; the default follows it, so the next new chat starts there too.
+    /// The chat keeps the pick; that surface's default follows it, so its next new chat starts there.
     func selectModel(_ option: AIModelOption, in chat: AIChatState) {
         let selection = AIModelOption.withDefaultEffort(
             option.selection, settings: core.aiSettings,
             subscription: core.chatGPTSubscription, installedAI: core.installedAI)
         chat.setModel(selection)
-        core.aiSettings.select(selection)
+        core.aiSettings.select(selection, surface: surface(of: chat))
     }
 
     func reasoningEfforts(for chat: AIChatState) -> [ChatGPTSubscription.Effort] {
@@ -652,7 +869,12 @@ final class AIChatCoordinator {
     func selectReasoningEffort(_ effort: ChatGPTSubscription.Effort, in chat: AIChatState) {
         guard let selection = model(for: chat)?.withEffort(effort.id) else { return }
         chat.setModel(selection)
-        core.aiSettings.select(selection)
+        core.aiSettings.select(selection, surface: surface(of: chat))
+    }
+
+    /// Which surface a chat lives on right now; one that answers elsewhere counts as the window's.
+    private func surface(of chat: AIChatState) -> AIDefaultSurface {
+        chats.isQuickAI(chat) ? .quickAI : .chat
     }
 
     @discardableResult

@@ -50,6 +50,10 @@ The command palette is a borderless floating `NSPanel` hosting SwiftUI; see
                                             · applies the configured source to the field editor
 ```
 
+Unless the palette is already up on Quick AI's screens: their hotkey press means the second press of a
+toggle, so `togglePalette` hides the panel rather than swapping in the launcher — the swap would
+reset the conversation, dismissals keep it (see [Screens](#screens)).
+
 Everything resolved "once per summon" is resolved there deliberately, not per render. `AppCore` holds
 only the closure wiring; the behaviour is `PaletteCoordinator`'s.
 
@@ -61,12 +65,12 @@ SwiftUI search field re-focuses. `prepare` is one of four motions over the scree
 [Navigation](#navigation).
 
 Hiding schedules Pop to Root Search, and `PaletteWindowController.popToRoot` is its only path: the
-palette returns to the launcher *and* chat starts a new conversation, at once or after
-`popToRootTimeout`, unless a re-summon inside that window consumes the pending reset first. An
-unfinished chat is a thing being done, exactly like a typed query, so the screen and the conversation
-are reset together rather than the screen alone. A reply still streaming is the one exception — it was
-asked for, and resetting would throw the answer away. Nothing is lost either way: a conversation is
-written to Chat History, and the AI Chat window's sidebar, as soon as it has a message.
+palette returns to the launcher at once or after `popToRootTimeout`, unless a re-summon inside that
+window consumes the pending reset first. Only the screen resets — whether the next summon
+resumes a Quick AI transcript is decided on the way in by
+[Quick AI's open policy](ai.md#quick-ais-lifetime-is-decided-on-the-way-in). The one exception is
+Quick AI itself: a dismiss-by-focus-loss at `Immediately` is granted a five-second window in play,
+so a hotkey re-summon lands back in the chat instead of the launcher.
 
 Each `PaletteMode` maps to one type conforming to `PaletteScreen`, and the protocol is what keeps the
 selection invariant honest: a screen exposes `rows` as its single source of visible order, and the

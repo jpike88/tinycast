@@ -58,6 +58,7 @@ final class ChatHistoryStore {
           call_id TEXT NOT NULL,
           origin TEXT NOT NULL,
           title TEXT NOT NULL,
+          detail TEXT,
           state TEXT NOT NULL,
           text_offset INTEGER NOT NULL,
           PRIMARY KEY(message_id, position)
@@ -372,6 +373,9 @@ final class ChatHistoryStore {
             isAvailable = false
             return false
         }
+        // `CREATE TABLE IF NOT EXISTS` leaves an existing message_tools alone, so the column the
+        // schema now names arrives as an ALTER that fails harmlessly once it is already there.
+        sqlite3_exec(database, "ALTER TABLE message_tools ADD COLUMN detail TEXT", nil, nil, nil)
         isAvailable = true
         return true
     }
@@ -500,8 +504,8 @@ final class ChatHistoryStore {
         guard !message.toolUses.isEmpty else { return true }
         let sql = """
             INSERT INTO message_tools(
-              message_id, position, call_id, origin, title, state, text_offset)
-            VALUES(?, ?, ?, ?, ?, ?, ?);
+              message_id, position, call_id, origin, title, state, text_offset, detail)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?);
             """
         guard let statement = prepare(sql, in: database) else { return false }
         defer { sqlite3_finalize(statement) }
@@ -513,6 +517,7 @@ final class ChatHistoryStore {
             bind(use.title, to: statement, at: 5)
             bind(use.state.rawValue, to: statement, at: 6)
             sqlite3_bind_int64(statement, 7, Int64(use.textOffset))
+            if let detail = use.detail { bind(detail, to: statement, at: 8) }
             guard sqlite3_step(statement) == SQLITE_DONE else { return false }
             sqlite3_reset(statement)
             sqlite3_clear_bindings(statement)
@@ -525,7 +530,8 @@ final class ChatHistoryStore {
         forConversation id: UUID, in database: OpaquePointer
     ) -> [UUID: [ChatToolUse]] {
         let sql = """
-            SELECT t.message_id, t.call_id, t.origin, t.title, t.state, t.text_offset, t.position
+            SELECT t.message_id, t.call_id, t.origin, t.title, t.state, t.text_offset,
+              t.detail, t.position
             FROM message_tools t
             JOIN messages m ON m.id = t.message_id
             WHERE m.conversation_id = ? ORDER BY t.message_id, t.position;
@@ -541,8 +547,9 @@ final class ChatHistoryStore {
                 ChatToolUse(
                     callID: text(statement, 1), origin: text(statement, 2),
                     title: text(statement, 3), state: stored == .running ? .failed : stored,
+                    detail: optionalText(statement, 6),
                     textOffset: Int(sqlite3_column_int64(statement, 5)),
-                    sequence: Int(sqlite3_column_int64(statement, 6))))
+                    sequence: Int(sqlite3_column_int64(statement, 7))))
         }
         return uses
     }

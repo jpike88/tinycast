@@ -174,7 +174,7 @@ final class CodexTurnRunner {
         turn.continuation.yield(
             .toolCall(
                 id: id, origin: origin ?? AIToolServerRow.label(name),
-                title: AIToolServerRow.label(item["tool"]?.stringValue ?? "")))
+                title: AIToolServerRow.label(item["tool"]?.stringValue ?? ""), detail: nil))
         turn.spentCalls += 1
         guard let roundCap = turn.roundCap, turn.spentCalls > roundCap else { return }
         // Finished before the interrupt, whose own cleanup would otherwise name a different reason.

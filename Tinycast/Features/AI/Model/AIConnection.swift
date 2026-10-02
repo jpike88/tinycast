@@ -6,6 +6,7 @@ enum AIProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
     case gemini
     case openRouter
     case openAICompatible
+    case anthropicCompatible
 
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ enum AIProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
         case .gemini: return "Google Gemini"
         case .openRouter: return "OpenRouter"
         case .openAICompatible: return "OpenAI Compatible"
+        case .anthropicCompatible: return "Anthropic Compatible"
         }
     }
 
@@ -26,11 +28,12 @@ enum AIProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta/openai"
         case .openRouter: return "https://openrouter.ai/api/v1"
         case .openAICompatible: return "https://api.openai.com/v1"
+        case .anthropicCompatible: return "https://api.anthropic.com"
         }
     }
 
     var apiShape: AIHTTPConfiguration.APIShape {
-        self == .anthropic ? .anthropic : .openAICompatible
+        self == .anthropic || self == .anthropicCompatible ? .anthropic : .openAICompatible
     }
 }
 
@@ -96,7 +99,7 @@ struct AIConnection: Codable, Equatable, Identifiable, Sendable {
     func capabilities(for model: String) -> AIModelCapabilities {
         AIModelCapabilities(
             images: provider != .openRouter || visionModels.contains(model),
-            // Only the two shapes whose bodies Tinycast writes; a gateway bills the upload first.
+            // Only the two vendor presets whose bodies Tinycast writes; a gateway bills the upload first.
             documents: provider == .openAI || provider == .anthropic,
             webSearch: provider == .openRouter, tools: true)
     }

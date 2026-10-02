@@ -228,6 +228,20 @@ run hover-arming-test      Tinycast/Palette/HoverArming.swift \
                            Tinycast/Features/Quicklinks/Model/Quicklink.swift \
                            Tinycast/Features/Quicklinks/Model/QuicklinkDestination.swift \
                            Tinycast/Features/CustomCommands/Model/CustomCommand.swift
+run palette-ai-draft-test  Tinycast/Palette/PaletteState.swift \
+                           Tinycast/Palette/PaletteMode.swift \
+                           Tinycast/Palette/HoverArming.swift \
+                           Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardFilter.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardFileKind.swift \
+                           Tinycast/Features/FileSearch/Model/FileSearchFilter.swift \
+                           Tinycast/Features/Clipboard/Model/ColorValue.swift \
+                           Tinycast/Features/Clipboard/Model/ColorFormat.swift \
+                           Tinycast/Features/Clipboard/Model/ColorSpaces.swift \
+                           Tinycast/Features/Quicklinks/Model/Quicklink.swift \
+                           Tinycast/Features/Quicklinks/Model/QuicklinkDestination.swift \
+                           Tinycast/Features/CustomCommands/Model/CustomCommand.swift
 run palette-escape-test    Tinycast/Palette/PaletteMode.swift \
                            Tinycast/Palette/PaletteEscapeAction.swift \
                            Tinycast/Palette/CommandEscapeTap.swift \
@@ -571,7 +585,17 @@ run updates-test           Tinycast/Features/Updates/Model/*.swift \
 run support-test           Tinycast/Features/Support/Model/*.swift
 run ai-provider-test       Tinycast/Features/Settings/AppSettingsKey.swift \
                            Tinycast/Features/AI/Model/*.swift \
-                           Tinycast/Features/AI/Settings/AISettingsStore.swift
+                           Tinycast/Features/AI/Settings/AISettingsStore.swift \
+                           Tinycast/Features/MCP/Model/MCPServer.swift \
+                           Tinycast/Features/MCP/Model/MCPTrustPolicy.swift
+run ai-web-search-test     Tinycast/Features/AI/Model/AITool.swift \
+                           Tinycast/Features/AI/Model/JSONValue.swift \
+                           Tinycast/Features/AI/Model/AIWebSearch.swift
+run calc-tool-test         Tinycast/Features/Calculator/Model/*.swift \
+                           Tinycast/Features/AI/Model/AITool.swift \
+                           Tinycast/Features/AI/Model/JSONValue.swift \
+                           Tinycast/Features/AI/Model/CalcToolSchema.swift \
+                           Tinycast/Features/AI/Service/CalcToolExecutor.swift
 run ai-chat-test           Tinycast/Features/AI/Model/AIRequest.swift \
                            Tinycast/Features/AI/Model/AIConnection.swift \
                            Tinycast/Features/AI/Model/AppleIntelligence.swift \
@@ -579,6 +603,7 @@ run ai-chat-test           Tinycast/Features/AI/Model/AIRequest.swift \
                            Tinycast/Features/AI/Model/AIRetention.swift \
                            Tinycast/Features/AI/Model/AITool.swift \
                            Tinycast/Features/AI/Model/JSONValue.swift \
+                           Tinycast/Features/AI/Model/CalcToolSchema.swift \
                            Tinycast/Features/AI/Model/ChatMessage.swift \
                            Tinycast/Features/AI/Model/ChatSession.swift \
                            Tinycast/Features/AI/Model/ChatChoices.swift \
@@ -587,6 +612,8 @@ run ai-chat-test           Tinycast/Features/AI/Model/AIRequest.swift \
                            Tinycast/Features/AI/Model/ChatFind.swift \
                            Tinycast/Features/AI/Model/ChatCitations.swift \
                            Tinycast/Features/AI/Model/ChatToolScope.swift \
+                           Tinycast/Features/AI/Model/BashToolSchema.swift \
+                           Tinycast/Features/AI/Model/FileSystemToolSchema.swift \
                            Tinycast/Features/AI/Model/MarkdownBlock.swift \
                            Tinycast/Features/AI/Model/MarkdownMath.swift \
                            Tinycast/Features/AI/Model/MathFormula.swift \
@@ -621,6 +648,10 @@ run chat-markdown-test     Tinycast/Platform/Appearance.swift \
                            Tinycast/Features/AI/UI/MathBox.swift \
                            Tinycast/Features/AI/UI/MathFont.swift \
                            Tinycast/Features/AI/UI/MathLayoutEngine.swift
+run file-tool-test         Tinycast/Features/AI/Model/AITool.swift \
+                           Tinycast/Features/AI/Model/JSONValue.swift \
+                           Tinycast/Features/AI/Model/FileSystemToolSchema.swift \
+                           Tinycast/Features/AI/Service/FileToolExecutor.swift
 run mcp-test               Tinycast/Features/Settings/AppSettingsKey.swift \
                            Tinycast/Features/AI/Model/AIConnection.swift \
                            Tinycast/Features/AI/Model/AppleIntelligence.swift \

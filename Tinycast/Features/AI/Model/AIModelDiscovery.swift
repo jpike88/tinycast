@@ -65,7 +65,7 @@ enum AIModelDiscovery {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        if provider == .anthropic {
+        if provider.apiShape == .anthropic {
             request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         } else if usesNativeGemini {
@@ -153,7 +153,7 @@ enum AIModelDiscovery {
             queryItems.removeAll { $0.name == "pageSize" }
             queryItems.append(URLQueryItem(name: "pageSize", value: "1000"))
             components.queryItems = queryItems
-        } else if provider == .anthropic {
+        } else if provider.apiShape == .anthropic {
             components.path = path + "/v1/models"
             var queryItems = components.queryItems ?? []
             queryItems.removeAll { $0.name == "limit" }

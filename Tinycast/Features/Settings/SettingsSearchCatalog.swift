@@ -278,7 +278,8 @@ enum SettingsSearchCatalog {
                 "api key", "connection", "base url", "openai", "anthropic", "ollama", "models",
                 "hide models"
             ]),
-        .init(.aiDefault, "Default model", keywords: ["llm", "gpt", "claude", "grok"]),
+        .init(.aiDefault, "Default model", keywords: ["llm", "gpt", "claude", "grok", "model", "quick ai chat"]),
+        .init(.aiDefault, "Quick AI default model", keywords: ["llm", "gpt", "claude", "grok"]),
         .init(.aiDefault, "Reasoning effort", keywords: ["thinking", "effort", "deepseek"]),
         .init(.aiChat, "Web search", keywords: ["browse", "internet"]),
         .init(.aiChat, "Tool call rounds", keywords: ["mcp", "tools", "limit", "loop", "agent", "unlimited"]),

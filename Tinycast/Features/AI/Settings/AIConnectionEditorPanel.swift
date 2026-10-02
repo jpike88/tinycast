@@ -205,8 +205,9 @@ struct AIConnectionEditorPanel: View {
             } else {
                 Label("No available model matches this key.", systemImage: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                if connection.provider == .openAICompatible {
-                    Button("Use “\(query)” anyway") { addModel(query) }
+                if connection.provider == .openAICompatible
+                    || connection.provider == .anthropicCompatible {
+                    Button("Use \u{201C}\(query)\u{201D} anyway") { addModel(query) }
                 }
             }
         } else {
@@ -264,7 +265,7 @@ struct AIConnectionEditorPanel: View {
     private var modelPlaceholder: String {
         switch connection.provider {
         case .openAI, .openAICompatible: return "Model ID (e.g. gpt-5.4-mini)"
-        case .anthropic: return "Model ID (e.g. claude-sonnet-4-6)"
+        case .anthropic, .anthropicCompatible: return "Model ID (e.g. claude-sonnet-4-6)"
         case .gemini: return "Model ID (e.g. gemini-3.7-flash)"
         case .openRouter: return "Model ID (e.g. openai/gpt-5.4-mini)"
         }

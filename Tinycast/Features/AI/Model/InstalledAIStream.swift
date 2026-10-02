@@ -124,7 +124,7 @@ enum InstalledAIStreamDecoder {
                 else { return nil }
                 return .toolCall(
                     id: id, origin: AIToolServerRow.title(of: call.handle, in: servers),
-                    title: AIToolServerRow.label(call.tool))
+                    title: AIToolServerRow.label(call.tool), detail: nil)
             case "tool_result":
                 guard let id = block["tool_use_id"] as? String else { return nil }
                 return .toolResult(id: id, isError: block["is_error"] as? Bool == true)

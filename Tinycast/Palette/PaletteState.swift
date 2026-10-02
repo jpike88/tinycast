@@ -111,12 +111,20 @@ final class PaletteState {
     /// Restore the screen underneath, false when this one is the root.
     func pop() -> Bool {
         guard let frame = backStack.popLast() else { return false }
+        // A chat's draft is nobody else's search: only a step that stays in chat restores it.
+        let keepsQuery = !(mode.isAI && !frame.mode.isAI)
         openScreen(frame.mode)
-        query = frame.query
+        query = keepsQuery ? frame.query : ""
         selection = frame.selection
         // Not `resetToken`: landing the list again would throw away the selection restored here.
         followToken = UUID()
         return true
+    }
+
+    /// A chat screen's composer is unsent work: dismissal drops it instead of carrying it on.
+    func dropAIDraft() {
+        guard mode.isAI else { return }
+        query = ""
     }
 
     /// Tab's step deeper into the ring: the screen crossed from is the step back, query and all.
