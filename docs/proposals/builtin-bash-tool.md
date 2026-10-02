@@ -57,7 +57,9 @@ through this one.
 - **The child's environment is scrubbed, not inherited whole.** Build it from `ProcessInfo`'s
   environment minus anything that names a Tinycast secret or path, and never include a
   Keychain-derived value at all — there are none to leak, and the rule is that none can arrive.
-  `PATH` stays, since a `git` that fails to resolve is a worse result than a `sh` that runs.
+  A Finder launch can export no `PATH` at all, and an `env node` shebang resolves through it
+  alone, so `scrubbed` guarantees one: brew dirs appended to whatever came in, the locator's
+  fallback when nothing did.
 - **Timeout is SIGKILL to the process group.** Default 30 000 ms, capped at 600 000 —
   Raycast's semantics verbatim. The child is spawned with its own process group so its
   descendants die with it: a timed-out `npm run dev` leaves no orphaned watcher. A timed-out

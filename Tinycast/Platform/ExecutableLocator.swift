@@ -2,6 +2,9 @@ import Foundation
 
 /// Finds a user's CLI the way their Terminal would; the app's own PATH is Finder's.
 enum ExecutableLocator {
+    /// Homebrew's bin dirs. Neither is on the PATH an app launch exports, and `env node`
+    /// shebangs die without one; every spawned child PATH must reach them.
+    nonisolated static let brewPaths = ["/opt/homebrew/bin", "/usr/local/bin"]
     /// `extraHomePaths` are home-relative executable paths for installs that own no shared `bin`.
     nonisolated static func locate(
         _ command: String,
@@ -24,7 +27,7 @@ enum ExecutableLocator {
         inherited: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String: String] {
         let paths =
-            [executable.deletingLastPathComponent().path, "/opt/homebrew/bin", "/usr/local/bin"]
+            [executable.deletingLastPathComponent().path] + brewPaths
             + [inherited["PATH"] ?? "/usr/bin:/bin"]
         return
             inherited
@@ -39,7 +42,7 @@ enum ExecutableLocator {
         var candidates = (environment["PATH"] ?? "")
             .split(separator: ":")
             .map { URL(fileURLWithPath: String($0)).appending(path: command) }
-        candidates += ["/opt/homebrew/bin", "/usr/local/bin"].map {
+        candidates += brewPaths.map {
             URL(fileURLWithPath: $0).appending(path: command)
         }
         candidates += [".local/bin", ".npm-global/bin", ".volta/bin", ".bun/bin", ".cargo/bin"].map {

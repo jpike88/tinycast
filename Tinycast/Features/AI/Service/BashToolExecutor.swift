@@ -310,9 +310,18 @@ final class BashToolExecutor {
     }
 
     /// The command's environment is everything this app inherited, minus anything of ours:
-    /// `TC_`-prefixed values could hand a shell state it must never read.
+    /// `TC_`-prefixed values could hand a shell state it must never read. Finder's launch may
+    /// export nothing, so the PATH is guaranteed here rather than trusted.
     nonisolated static func scrubbed(_ environment: [String: String]) -> [String: String] {
-        environment.filter { !$0.key.hasPrefix("TC_") && !$0.key.hasPrefix("TINYCAST") }
+        var dirs =
+            (environment["PATH"] ?? "")
+            .split(separator: ":", omittingEmptySubsequences: true).map(String.init)
+        // Appended, not prepended: a version manager's Node must keep outranking Homebrew's.
+        dirs += ExecutableLocator.brewPaths.filter { !dirs.contains($0) }
+        // Finder's launch may export no PATH at all; `env node` shebangs die without a brew dir.
+        var stripped = environment.filter { !$0.key.hasPrefix("TC_") && !$0.key.hasPrefix("TINYCAST") }
+        stripped["PATH"] = dirs.joined(separator: ":")
+        return stripped
     }
 
     // MARK: - Background

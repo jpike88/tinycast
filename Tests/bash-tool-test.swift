@@ -184,6 +184,17 @@ struct BashToolTest {
         check("the app's own environment never rides along", scrubbed["TC_SECRET"] == nil)
         check("the user's environment does", scrubbed["HOME"] == "/u")
 
+        check("a PATH the launch never exported still resolves one",
+            BashToolExecutor.scrubbed(["HOME": "/u"])["PATH"] == "/opt/homebrew/bin:/usr/local/bin")
+        check("an empty PATH counts as absent",
+            BashToolExecutor.scrubbed(["PATH": ""])["PATH"] == "/opt/homebrew/bin:/usr/local/bin")
+        check("a Finder PATH reaches Local's Node",
+            BashToolExecutor.scrubbed(["PATH": "/usr/bin:/bin"])["PATH"]
+            == "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin")
+        check("a present dir is never appended twice",
+            BashToolExecutor.scrubbed(["PATH": "/opt/homebrew/bin:/usr/bin"])["PATH"]
+            == "/opt/homebrew/bin:/usr/bin:/usr/local/bin")
+
         // MARK: The registry
 
         let executor = await MainActor.run { BashToolExecutor() }
