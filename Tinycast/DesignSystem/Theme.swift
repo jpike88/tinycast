@@ -50,6 +50,8 @@ enum Theme {
         /// A pill holding a square thumbnail; a full capsule fights the thumbnail's own corners.
         static let attachmentChip: CGFloat = 8
         static let card: CGFloat = 10
+        /// A window-to-be in the room preview, rounded like a real window rather than a row.
+        static let roomCard: CGFloat = 16
         static let keyCap: CGFloat = 6
         /// Settings shortcut-recorder keycap — smaller than the palette's `keyCap` chip.
         static let recorderKeyCap: CGFloat = 4
@@ -95,17 +97,21 @@ enum Theme {
         static let headerPadding: CGFloat = 10
         /// Collapsed compact bar: the search row centered in symmetric `headerPadding` slack.
         static let compactHeight: CGFloat = headerHeight + headerPadding * 2
-        /// How near the default placement a drag has to land before it snaps home.
-        static let paletteSnapDistance: CGFloat = 24
+        /// How close a dragged palette must be to the invisible vertical centre line.
+        static let paletteSnapDistance: CGFloat = 8
         /// A restored position needs this much bar on a display to still be grabbable.
         static let paletteMinimumVisible: CGFloat = 44
-        /// Dash and gap of the drop guides, equal so the line reads evenly.
-        static let dropGuideDash: CGFloat = 4
+        static let dropGuideDash: CGFloat = 8
+        static let dropGuideGap: CGFloat = 12
         static let dropGuideWidth: CGFloat = 2
+        static let dropGuideCombinedFlashTolerance: CGFloat = 6
+        static let dropGuideFadeThreshold: CGFloat = 36
+        static let dropGuideFadeDistance: CGFloat = 180
         static let bottomBarHeight: CGFloat = 52
         /// A `BarButton`'s hover capsule, shared by the footer group and the header's filter.
         static let barButtonHeight: CGFloat = 28
         static let rowIcon: CGFloat = 24
+        static let resultRowIcon: CGFloat = 26
         /// Colour-codes a secondary label, as Calendar.app marks an event's calendar.
         static let colorDot: CGFloat = 8
         /// The calendar-colour bar between a meeting row's icon and its title.
@@ -217,10 +223,9 @@ enum Theme {
         static let chatSourceTitle: CGFloat = 200
         /// The context card's width: a label column and a value one, with room for a model name.
         static let chatContextCard: CGFloat = 300
-        /// One "Aa" segment of the Interface Size control; three sit in a grouped row's trailing slot.
-        static let interfaceSizeSegment: CGFloat = 40
         /// A grouped `Form` row's control height.
         static let settingsControlHeight: CGFloat = 28
+        static let emojiSkinToneGlyph: CGFloat = 13
         /// One density preview; five fit across the Emoji settings detail pane.
         static let emojiSettingsGridPreview: CGFloat = 72
         /// The layout editor. Height is stated so selecting an entry cannot resize the panel.
@@ -241,6 +246,14 @@ enum Theme {
         static let layoutPositionStroke: CGFloat = 1.5
         /// A position cell's clickable row; the glyph floats inside it, so the whole cell hits.
         static let layoutPositionCell: CGFloat = 34
+        /// AI Providers: Mail's Accounts shape, a provider list beside the selected one's detail.
+        static let aiProvidersPanel = CGSize(width: 840, height: 520)
+        static let aiProvidersList: CGFloat = 262
+        /// What the system leaves either side of a segment's label once the control has settled.
+        static let segmentLabelInset: CGFloat = 13
+        static let aiVariableName: CGFloat = 170
+        /// A Codex usage window's meter, beside its "72% left" readout.
+        static let aiUsageBar: CGFloat = 110
         /// Settings editor modals (Custom Commands, Snippets): fixed width, intrinsic height.
         static let editorSheetWidth: CGFloat = 480
         /// The multi-line box inside those modals; it scrolls rather than grows the panel.
@@ -279,6 +292,16 @@ enum Theme {
         static let volumeTrackHeight: CGFloat = 6
         /// Fixed slot for the level readout, sized to the widest string it ever holds.
         static let volumeReadout: CGFloat = 38
+        static let roomCardTitleBar: CGFloat = 40
+        static let roomCardStroke: CGFloat = 2
+        static let roomCardShadowRadius: CGFloat = 24
+        static let roomCardShadowOffset: CGFloat = 8
+        static let roomCardDot: CGFloat = 8
+        static let roomCardIcon: CGFloat = 64
+        static let roomCardIconLarge: CGFloat = 96
+        /// Below this a card is a sliver, too short for its icon.
+        static let roomCardIconMinHeight: CGFloat = 160
+        static let roomCardLargeIconMinSide: CGFloat = 320
     }
 
     enum Duration {
@@ -293,6 +316,7 @@ enum Theme {
         static let dialogExit: TimeInterval = 0.10
         /// Fade-in/out for a hover `Tooltip`, after a wait only a deliberate hover outlasts.
         static let tooltip: TimeInterval = 0.15
+        static let dropGuide: TimeInterval = 0.24
         static let tooltipDelay: TimeInterval = 0.4
         /// A control lighting up under the pointer; short enough to feel like a response.
         static let hover: TimeInterval = 0.12
@@ -304,6 +328,16 @@ enum Theme {
         static let settingsReveal: TimeInterval = 0.28
         static let settingsFlash: TimeInterval = 2.0
         static let settingsFlashOut: TimeInterval = 0.6
+        /// A room preview card gliding to its next place; arriving and leaving cards fade.
+        static let roomGlide: TimeInterval = 0.32
+        static let roomCardEnter: TimeInterval = 0.2
+        static let roomCardExit: TimeInterval = 0.18
+        static let roomSettle: TimeInterval = 0.25
+    }
+
+    enum RoomMotion {
+        /// Quick to leave, long to settle, so a card reads as the window it is about to become.
+        static let glide = Animation.timingCurve(0.2, 0, 0, 1, duration: Theme.Duration.roomGlide)
     }
 
     enum DialogMotion {
@@ -403,9 +437,7 @@ enum Theme {
         /// Emoji grid chrome: a quiet tile at rest, with two legible rings on interaction.
         static let emojiCell = ramp(dark: 0.045, light: 0.04)
         static let emojiHoverBorder = ramp(dark: 0.42, light: 0.34)
-        static let emojiSelectionBorder = adaptive(
-            dark: NSColor(srgbRed: 0.96, green: 0.90, blue: 0.72, alpha: 0.92),
-            light: .srgbInk(0, alpha: 0.72))
+        static let emojiSelectionBorder = ramp(dark: 0.92, light: 0.72)
         static let emojiInnerBorder = adaptive(
             dark: .srgbInk(0, alpha: 0.72), light: .srgbInk(1, alpha: 0.72))
         static let menuHover = ramp(dark: 0.10, light: 0.09)
@@ -440,6 +472,16 @@ enum Theme {
         /// The preview's plate: a display is dark in both appearances, so `adaptive`, not `ramp`.
         static let layoutPreviewGround = adaptive(
             dark: .srgbInk(0, alpha: 0.55), light: .srgbInk(0, alpha: 0.50))
+        /// The blurred desk behind a room preview, darkened so only the new layout reads.
+        static let roomPreviewDim = adaptive(
+            dark: .srgbInk(0, alpha: 0.18), light: .srgbInk(0, alpha: 0.18))
+        /// A room card is a solid window in both appearances, so the desk never shows through.
+        static let roomCardFill = adaptive(
+            dark: .srgbInk(0.16, alpha: 0.94), light: .srgbInk(0.98, alpha: 0.94))
+        static let roomCardStroke = Color.accentColor
+        static let roomCardShadow = adaptive(
+            dark: .srgbInk(0, alpha: 0.25), light: .srgbInk(0, alpha: 0.25))
+        static let roomCardDot = ramp(dark: 0.25, light: 0.25)
         /// The pill behind the header of the section a Settings search jumped to.
         static let searchFlash = Color.accentColor.opacity(0.35)
         /// The two squares of a checkerboard, behind a colour with alpha to show.

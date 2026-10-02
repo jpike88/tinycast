@@ -12,7 +12,7 @@ enum ExecutableLocator {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) async -> URL? {
         // The shell's answer wins: a stale install in a well-known prefix can shadow the working one.
-        if let path = await loginShellLookup(command) {
+        if let path = await shellLookup(command, shell: loginShell()) {
             let url = URL(fileURLWithPath: path)
             if isExecutable(url) { return url }
         }
@@ -45,9 +45,10 @@ enum ExecutableLocator {
         candidates += brewPaths.map {
             URL(fileURLWithPath: $0).appending(path: command)
         }
-        candidates += [".local/bin", ".npm-global/bin", ".volta/bin", ".bun/bin", ".cargo/bin"].map {
-            home.appending(path: $0).appending(path: command)
-        }
+        candidates += [
+            ".local/bin", ".npm-global/bin", ".volta/bin", ".bun/bin", ".cargo/bin",
+            ".local/share/mise/shims", ".asdf/shims"
+        ].map { home.appending(path: $0).appending(path: command) }
         candidates += extraHomePaths.map { home.appending(path: $0) }
         candidates += nvmInstalls(command, in: home)
         return candidates
@@ -67,12 +68,13 @@ enum ExecutableLocator {
         FileManager.default.isExecutableFile(atPath: url.path)
     }
 
-    /// `-i` reads the rc file that puts a version manager on PATH; a watchdog bounds a hang.
-    nonisolated private static func loginShellLookup(_ command: String) async -> String? {
+    /// Sources the rc that puts a version manager on PATH; a watchdog bounds a hang.
+    nonisolated static func shellLookup(_ command: String, shell: URL) async -> String? {
         await Task.detached {
             let process = Process()
-            process.executableURL = loginShell()
-            process.arguments = ["-ilc", #"command -v -- "$1""#, "tinycast-locator", command]
+            let (executable, arguments) = lookup(command, in: shell)
+            process.executableURL = executable
+            process.arguments = arguments
             process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
             process.environment = ProcessInfo.processInfo.environment.merging(["TINYCAST": "1"]) {
                 _, new in new
@@ -81,28 +83,54 @@ enum ExecutableLocator {
             process.standardError = FileHandle.nullDevice
             let stdout = Pipe()
             process.standardOutput = stdout
-            do { try process.run() } catch { return nil }
+            guard let exit = try? process.runObservingExit() else { return nil }
             let watchdog = Task {
                 try await Task.sleep(for: .seconds(5))
                 if process.isRunning { process.terminate() }
             }
             let data = stdout.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
+            exit.wait()
             watchdog.cancel()
             guard process.terminationStatus == 0 else { return nil }
-            let path = String(decoding: data, as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            // Startup and logout files can print on either side of the lookup's answer.
+            let path =
+                String(decoding: data, as: UTF8.self)
+                .split(whereSeparator: \.isNewline)
+                .last { $0.hasPrefix(answerMarker) }?
+                .dropFirst(answerMarker.count)
+                .trimmingCharacters(in: .whitespaces) ?? ""
             return path.hasPrefix("/") ? path : nil
         }.value
     }
 
-    /// The lookup script is POSIX, so a shell like fish falls back to zsh, the macOS default.
+    nonisolated private static let answerMarker = "tinycast-locator:"
+
+    /// fish binds `-c` arguments to `$argv`, not `$1`; any other shell falls back to zsh.
+    nonisolated private static func lookup(_ command: String, in shell: URL) -> (URL, [String]) {
+        switch shell.lastPathComponent {
+        case "fish":
+            let script = #"printf '\#(answerMarker)%s\n' (command -v -- $argv[1])"#
+            return (shell, ["-ilc", script, command])
+        // An interactive child wedges in the tty's foreground-group handshake when the caller
+        // owns a terminal, so the rc that puts a version manager on PATH is sourced by name.
+        case "zsh":
+            let rc = "${ZDOTDIR:-$HOME}/.zshrc"
+            let script = "test -r \"\(rc)\" && . \"\(rc)\"\n" + posixScript
+            return (shell, ["-lc", script, "tinycast-locator", command])
+        case "bash", "sh", "ksh", "dash":
+            return (shell, ["-lc", posixScript, "tinycast-locator", command])
+        default:
+            return lookup(command, in: URL(fileURLWithPath: "/bin/zsh"))
+        }
+    }
+
+    nonisolated private static let posixScript =
+        #"printf '\#(answerMarker)%s\n' "$(command -v -- "$1")""#
+
     nonisolated private static func loginShell() -> URL {
-        let posixShells: Set = ["zsh", "bash", "sh", "ksh", "dash"]
         guard let entry = getpwuid(getuid()), let shell = entry.pointee.pw_shell else {
             return URL(fileURLWithPath: "/bin/zsh")
         }
-        let url = URL(fileURLWithPath: String(cString: shell))
-        return posixShells.contains(url.lastPathComponent) ? url : URL(fileURLWithPath: "/bin/zsh")
+        return URL(fileURLWithPath: String(cString: shell))
     }
 }

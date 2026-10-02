@@ -110,6 +110,12 @@ final class LauncherCoordinator {
             windowCommandCoordinator.runCustomWindowSize(id: id)
             return
         }
+        if app.kind == .windowRoom {
+            // The coordinator hides the palette itself: entering must not restore focus first.
+            guard let id = Room.id(fromEntryID: app.id) else { return }
+            core.roomCoordinator.enterRoom(id: id)
+            return
+        }
         if app.kind == .windowLayout {
             // The coordinator hides the palette itself: a layout must not restore focus first.
             guard let id = WindowLayout.id(fromEntryID: app.id) else { return }
@@ -146,10 +152,10 @@ final class LauncherCoordinator {
             guard let bundleID = app.bundleID else { return }
             AppLauncher.openSettingsPane(bundleID: bundleID)
         case .snippet:
-            let snippetID = String(app.id.dropFirst("snippet:".count))
+            guard let snippetID = StoredSnippet.id(fromEntryID: app.id) else { return }
             snippetCoordinator.expandSnippet(id: snippetID, target: previous)
         case .command, .quickAction, .customCommand, .systemAction, .windowCommand, .windowLayout,
-            .quicklink, .appleShortcut, .extensionCommand, .meeting:
+            .windowRoom, .quicklink, .appleShortcut, .extensionCommand, .meeting:
             break  // handled above
         }
     }
@@ -174,6 +180,8 @@ final class LauncherCoordinator {
             paletteCoordinator.togglePalette(mode: .calculatorHistory)
         case .clipboardHistory:
             paletteCoordinator.togglePalette(mode: .clipboard)
+        case .pasteSequentially:
+            core.clipboardCoordinator.pasteNextInSequence()
         case .searchEmoji:
             paletteCoordinator.togglePalette(mode: .emoji)
         case .searchFiles:
@@ -221,6 +229,10 @@ final class LauncherCoordinator {
         case .captureWindowLayout:
             dismissPalette()
             windowLayoutCoordinator.captureWindowLayout()
+        case .switchRoom:
+            core.roomCoordinator.showRooms()
+        case .createRoom:
+            core.roomCoordinator.createRoom()
         case .createQuicklink:
             dismissPalette()
             quicklinkCoordinator.editQuicklink(nil)

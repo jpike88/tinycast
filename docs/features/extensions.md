@@ -80,8 +80,8 @@ work is not in the interpreter, it's in the `@raycast/api` shim and the Node sur
 same either way. A bare `JSContext` has the full modern language (checked: `Object.groupBy`,
 `Array.fromAsync`, `Intl`, lookbehind regex) and nothing else, so the runtime supplies `console`,
 timers, `fetch`, `URL`, `URLSearchParams`, `Blob`/`File`/`FormData`, `DOMException`,
-`TextEncoder`/`TextDecoder`, `AbortController`, `atob`/`btoa`,
-`ReadableStream`/`WritableStream`/`TransformStream` and `structuredClone` itself.
+`TextEncoder`/`TextDecoder`, `AbortController`, `Event`/`EventTarget`, `MessageChannel`/`MessagePort`,
+`atob`/`btoa`, `ReadableStream`/`WritableStream`/`TransformStream` and `structuredClone` itself.
 
 ## The JS runtime
 
@@ -404,7 +404,10 @@ screens hold (see [palette.md](palette.md)).
   the flattened `ExtensionAction` list rather than the drawn rows, so ↵ and the panel fire the same
   one without resolving an icon per arrow key. Header accessory symbols use the same 14pt Medium
   monochrome treatment; their menus use the same extension-owned transition, anchored to the control.
-- **Feedback** — `showToast` stacks above the footer, `showHUD` is a centred pill, and `confirmAlert`
+- **Feedback** — `showToast` replaces the current toast, a glass pill that takes the footer menu button's place and is
+  lit by its style's colour. Hovering turns its mark into an ×, and clicking anywhere but its button dismisses it and
+  gives the menu button back. A failure toast's button is always **Copy** (title and message); any other style shows
+  the command's primary action; `showHUD` is a centred pill, and `confirmAlert`
   goes through `DialogController` like every other question the app asks. Its dialog sits at
   `.dialog`, above the palette's `.palette`, so a view command keeps its screen behind it — and
   the palette does not dismiss while it is up (`AppCore.isShowingDialog`), because dismissing pops to
@@ -658,7 +661,7 @@ the descriptor calls `tar` unpacks through), `os`,
 `child_process` (`exec`, `execFile`, `execSync`, `execFileSync`, `spawnSync`, and a streaming `spawn`,
 each async form reporting the child's real `pid` for `process.kill` — Timers pauses that way),
 `crypto` (hashes, HMAC, PBKDF2, AES-CBC/ECB, random, UUID), `zlib` (gzip/zlib/raw deflate, both
-directions), `http`/`https` (`request`, `get` and `Agent`, buffered over the same URLSession bridge
+directions, plus `create*` streams that buffer until `end`), `http`/`https` (`request`, `get` and `Agent`, buffered over the same URLSession bridge
 as `fetch`), `stream` (`Readable`, `Writable`, `Duplex`, `Transform`, `PassThrough`, `pipeline`,
 `finished`, plus `stream/promises` and `stream/web`), `util`, `events`, `buffer`, `url`, `querystring`, `punycode`, `assert`,
 `string_decoder`, `timers`. Every other built-in resolves to a stub that throws only when used, so a
@@ -669,6 +672,12 @@ a member it cannot see arrives as `undefined`, which `class … extends` reports
 `TypeError: The superclass is not a constructor` at import time, naming nothing. `async_hooks` hands
 out a real `AsyncLocalStorage` and `AsyncResource` rather than a stub for the same reason: undici
 extends the latter at module scope, and running the callback in place is the whole of it here.
+
+**WebAssembly** — `compile`, `instantiate` and their streaming forms run through the synchronous
+`Module` and `Instance` constructors. JavaScriptCore settles the promise forms from a run-loop timer on
+the thread that owns the VM, and the runtime's queue never spins one, so they stayed pending forever.
+sql.js loads that way; Zotero is the reference case, whose Search Database sat on Loading… with no
+error.
 
 **Streams** — the stream core is Node's real contract, not a stand-in: an extension that ships
 `stream-chain` and `stream-json` to walk a package index builds object-mode pipelines out of it, and
@@ -714,7 +723,7 @@ needs no push channel; sends are chained, because two host calls can otherwise s
 A bundled `ws` never looks at that global. It runs its handshake through `http.request` and waits for
 an `upgrade` carrying a raw socket it frames itself, so the shim answers with one that re-frames RFC
 6455 in both directions on top of the native task. The 101 it synthesises names no extension, which
-is what keeps `permessage-deflate` — streaming zlib, which the shims have no answer for — off the
+is what keeps `permessage-deflate` — incremental zlib, which the shims have no answer for — off the
 connection. Home Assistant is the reference case: it authenticates, subscribes, and re-renders on
 every state push over that socket. The scheme rides with the module for the same reason: `ws` hands
 `https.request` an options bag with no protocol in it, and a `wss:` URL that went out as `ws:` would

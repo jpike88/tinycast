@@ -11,10 +11,12 @@ final class HotKeyManager {
     var onRunSystemAction: ((SystemAction.ID) -> Void)?
     var onRunWindowCommand: ((WindowCommand.ID) -> Void)?
     var onRunWindowLayout: ((UUID) -> Void)?
+    var onEnterRoom: ((UUID) -> Void)?
     var onRunCustomWindowSize: ((UUID) -> Void)?
     var onOpenQuicklink: ((UUID) -> Void)?
     var onRunQuickAction: ((UUID) -> Void)?
     var onRunAppleShortcut: ((UUID) -> Void)?
+    var onExpandSnippet: ((StoredSnippet.ID) -> Void)?
     var onRunExtensionCommand: ((String) -> Void)?
     /// Names what only the stores know; the fixed catalogs resolve here. Set in `AppCore.start()`.
     var displayName: ((HotKeyAction) -> String?)?
@@ -56,17 +58,20 @@ final class HotKeyManager {
     private let boundQuicklinkKey = "boundQuicklinkIDs"
     private let boundQuickActionKey = "boundQuickActionIDs"
     private let boundWindowLayoutKey = "boundWindowLayoutIDs"
+    private let boundWindowRoomKey = "boundWindowRoomIDs"
     private let boundCustomWindowSizeKey = "boundCustomWindowSizeIDs"
     private let boundAppleShortcutKey = "boundAppleShortcutIDs"
+    private let boundSnippetKey = "boundSnippetIDs"
     private let boundExtensionCommandKey = "boundExtensionCommandEntryIDs"
 
     func start(
         customCommandIDs: Set<UUID>, quicklinkIDs: Set<UUID>, windowLayoutIDs: Set<UUID>,
-        customWindowSizeIDs: Set<UUID>, quickActionIDs: Set<UUID>
+        windowRoomIDs: Set<UUID>, customWindowSizeIDs: Set<UUID>, quickActionIDs: Set<UUID>
     ) {
         prune(key: boundCustomCommandKey, live: customCommandIDs) { .customCommand(id: $0) }
         prune(key: boundQuicklinkKey, live: quicklinkIDs) { .quicklink(id: $0) }
         prune(key: boundWindowLayoutKey, live: windowLayoutIDs) { .windowLayout(id: $0) }
+        prune(key: boundWindowRoomKey, live: windowRoomIDs) { .windowRoom(id: $0) }
         prune(key: boundCustomWindowSizeKey, live: customWindowSizeIDs) {
             .customWindowSize(id: $0)
         }
@@ -110,6 +115,8 @@ final class HotKeyManager {
     /// Window-layout UUIDs with a binding; authored records, so they need an index of their own.
     var boundWindowLayoutIDs: [UUID] { boundIDs(key: boundWindowLayoutKey) }
 
+    var boundWindowRoomIDs: [UUID] { boundIDs(key: boundWindowRoomKey) }
+
     var boundCustomWindowSizeIDs: [UUID] { boundIDs(key: boundCustomWindowSizeKey) }
 
     var boundQuickActionIDs: [UUID] { boundIDs(key: boundQuickActionKey) }
@@ -117,10 +124,24 @@ final class HotKeyManager {
     /// Pruned by `AppleShortcutCoordinator` after a successful read, never here at launch.
     var boundAppleShortcutIDs: [UUID] { boundIDs(key: boundAppleShortcutKey) }
 
+    /// Swept by `removeSnippetBindings` on each load, never at launch: the store may be off.
+    var boundSnippetIDs: [StoredSnippet.ID] {
+        UserDefaults.standard.stringArray(forKey: boundSnippetKey) ?? []
+    }
+
     /// A deleted app takes its Settings row with it, so nothing else could ever clear its binding.
     func removeAppBindings(where isUninstalled: (String) -> Bool) {
         for bundleID in boundBundleIDs where isUninstalled(bundleID) {
             let action = HotKeyAction.app(bundleID: bundleID)
+            if recordingAction == action { recordingAction = nil }
+            setBinding(nil, for: action)
+        }
+    }
+
+    /// Covers a file deleted or renamed outside Tinycast, which no Settings row is left to clear.
+    func removeSnippetBindings(keeping liveIDs: Set<StoredSnippet.ID>) {
+        for id in boundSnippetIDs where !liveIDs.contains(id) {
+            let action = HotKeyAction.snippet(id: id)
             if recordingAction == action { recordingAction = nil }
             setBinding(nil, for: action)
         }
@@ -157,13 +178,9 @@ final class HotKeyManager {
 
         switch action {
         case .app(let bundleID):
-            var set = Set(boundBundleIDs)
-            if binding == nil { set.remove(bundleID) } else { set.insert(bundleID) }
-            UserDefaults.standard.set(Array(set), forKey: boundKey)
+            index(bundleID, bound: binding != nil, key: boundKey)
         case .settingsPane(let bundleID):
-            var set = Set(boundPaneBundleIDs)
-            if binding == nil { set.remove(bundleID) } else { set.insert(bundleID) }
-            UserDefaults.standard.set(Array(set), forKey: boundPaneKey)
+            index(bundleID, bound: binding != nil, key: boundPaneKey)
         case .customCommand(let id):
             index(id, bound: binding != nil, key: boundCustomCommandKey)
         case .quicklink(let id):
@@ -172,14 +189,16 @@ final class HotKeyManager {
             index(id, bound: binding != nil, key: boundQuickActionKey)
         case .windowLayout(let id):
             index(id, bound: binding != nil, key: boundWindowLayoutKey)
+        case .windowRoom(let id):
+            index(id, bound: binding != nil, key: boundWindowRoomKey)
         case .customWindowSize(let id):
             index(id, bound: binding != nil, key: boundCustomWindowSizeKey)
         case .appleShortcut(let id):
             index(id, bound: binding != nil, key: boundAppleShortcutKey)
+        case .snippet(let id):
+            index(id, bound: binding != nil, key: boundSnippetKey)
         case .extensionCommand(let entryID):
-            var set = Set(boundExtensionCommandEntryIDs)
-            if binding == nil { set.remove(entryID) } else { set.insert(entryID) }
-            UserDefaults.standard.set(Array(set), forKey: boundExtensionCommandKey)
+            index(entryID, bound: binding != nil, key: boundExtensionCommandKey)
         case .togglePalette, .command, .systemAction, .windowCommand:
             break
         }
@@ -222,8 +241,10 @@ final class HotKeyManager {
         actions += boundQuicklinkIDs.map { .quicklink(id: $0) }
         actions += boundQuickActionIDs.map { .quickAction(id: $0) }
         actions += boundWindowLayoutIDs.map { .windowLayout(id: $0) }
+        actions += boundWindowRoomIDs.map { .windowRoom(id: $0) }
         actions += boundCustomWindowSizeIDs.map { .customWindowSize(id: $0) }
         actions += boundAppleShortcutIDs.map { .appleShortcut(id: $0) }
+        actions += boundSnippetIDs.map { .snippet(id: $0) }
         actions += boundExtensionCommandEntryIDs.map { .extensionCommand(entryID: $0) }
         actions += SystemAction.ID.allCases.map { .systemAction(id: $0) }
         actions += WindowCommand.ID.allCases.map { .windowCommand(id: $0) }
@@ -247,6 +268,8 @@ final class HotKeyManager {
             return WindowCommandCatalog.command(id: id)?.name ?? "Window Command"
         case .windowLayout:
             return displayName?(action) ?? "Window Layout"
+        case .windowRoom:
+            return displayName?(action) ?? "Room"
         case .customWindowSize:
             return displayName?(action) ?? "Custom Size"
         case .quicklink:
@@ -255,6 +278,8 @@ final class HotKeyManager {
             return displayName?(action) ?? "Quick Action"
         case .appleShortcut:
             return displayName?(action) ?? "Apple Shortcut"
+        case .snippet:
+            return displayName?(action) ?? "Snippet"
         case .extensionCommand:
             return displayName?(action) ?? "Extension Command"
         }
@@ -290,10 +315,12 @@ final class HotKeyManager {
         case .systemAction(let id): onRunSystemAction?(id)
         case .windowCommand(let id): onRunWindowCommand?(id)
         case .windowLayout(let id): onRunWindowLayout?(id)
+        case .windowRoom(let id): onEnterRoom?(id)
         case .customWindowSize(let id): onRunCustomWindowSize?(id)
         case .quicklink(let id): onOpenQuicklink?(id)
         case .quickAction(let id): onRunQuickAction?(id)
         case .appleShortcut(let id): onRunAppleShortcut?(id)
+        case .snippet(let id): onExpandSnippet?(id)
         case .extensionCommand(let entryID): onRunExtensionCommand?(entryID)
         }
     }
@@ -308,6 +335,12 @@ final class HotKeyManager {
         var set = Set(boundIDs(key: key))
         if bound { set.insert(id) } else { set.remove(id) }
         persist(set, key: key)
+    }
+
+    private func index(_ id: String, bound: Bool, key: String) {
+        var set = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        if bound { set.insert(id) } else { set.remove(id) }
+        UserDefaults.standard.set(Array(set), forKey: key)
     }
 
     /// Drops bindings whose item is gone, deleted while Tinycast wasn't running.

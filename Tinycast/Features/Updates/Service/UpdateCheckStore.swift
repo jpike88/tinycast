@@ -62,6 +62,7 @@ final class UpdateCheckStore {
     }
 
     func start() {
+        return // fork: never check upstream for updates
         guard channel.updatesItself, runningVersion != nil else { return }
         // Replace rather than bail: an exited loop leaves a non-nil task that would block restart.
         pump?.cancel()

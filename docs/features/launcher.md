@@ -11,9 +11,10 @@ earliest scope wins).
   `LauncherList.rows`, in that order.
 - **A category's switch is a master switch, not a list filter.** `VisibilityStore.isKindEnabled` gates
   `orderedResults` *and* `HotKeyManager.perform`, so `Enable Applications` off stops the per-app chords
-  as well as the rows — the guard sits in the one dispatch funnel, the way each feature switch already
-  guards its own. The per-item checkbox beside it is the narrow tool: it hides one row and leaves that
-  row's shortcut firing, and **Hide from Search** in the ⌘K menu ticks that same checkbox off for the
+  as well as the rows. Its Settings switch stays available while the application
+  list disables beneath it — the guard sits in the one dispatch funnel, the way each feature switch
+  already guards its own. The per-item checkbox beside it is the narrow tool: it hides one row and
+  leaves that row's shortcut firing, and **Hide from Search** in the ⌘K menu ticks that checkbox off for the
   kinds whose pane can tick it back on. A new category must be wired into
   `VisibilityStore.allowsHotKey`, or its chords keep running while its pane reads off.
 - **One command, one pane, one switch.** `SettingsTab.ownedCommands` is the whole table of which pane
@@ -471,7 +472,11 @@ requested at first use, and denial produces an alert linking to the relevant Sys
 Toggle System Appearance changes macOS; Tinycast follows it only while its own Appearance is System.
 
 Restart, Shut Down, Log Out, Empty Trash and Quit All Applications confirm before execution: ↵ runs
-the action, Escape cancels. Every dialog is Tinycast's own: confirmations, failure reports and the Set
+the action, Escape cancels. **Empty Trash follows Finder's own "Show warning before emptying the
+Trash"** (Finder ▸ Settings ▸ Advanced) rather than overriding it: with the box off it runs without a
+dialog. `SystemActionRunner.finderWarnsBeforeEmptyingTrash` reads `com.apple.finder`'s
+`WarnOnEmptyTrash` at call time, and an absent key counts as on, because Finder writes it only once
+the box is changed. Every dialog is Tinycast's own: confirmations, failure reports and the Set
 Volume slider all render through `DialogController` rather than an `NSAlert`
 (see [ui.md](../ui.md#dialogs--hud)). Each confirmation carries the action's own icon — Restart shows
 `arrow.clockwise`, Empty Trash `trash.slash` — so the dialog is recognizably about the row that
@@ -524,6 +529,14 @@ immediately **before** the window commands so the two read as one family. Their 
 and launcher checkbox live in Settings › Window Management beside the commands', and
 `windowLayoutsShowInLauncher` takes the section and its two commands out together. See
 [window-layouts.md](window-layouts.md).
+
+## Rooms
+
+`RoomStore` supplies the `.windowRoom` slice the same way, sorted by name and published between the
+window layouts and the window commands; `LauncherList.rows` mirrors that position. ↵ on a room
+enters it through `RoomCoordinator.enterRoom(id:)`, which hides the palette itself. The section and
+the two room commands leave together with `windowRoomsShowInLauncher`. See
+[window-rooms.md](window-rooms.md).
 
 ## Quicklinks
 
@@ -699,7 +712,7 @@ favorite, alias and learned ranking survive the round trip, and its shortcut kee
 
 The row is offered only where Settings can undo it, and `KindDescriptor.canHideFromSearch` is that
 rule — per kind, and a new `Kind` case has to answer it to compile. Applications, System Settings,
-Commands, Quick Actions, System Actions, Window Commands, Window Layouts and extension commands each
+Commands, Quick Actions, System Actions, Window Commands, Window Layouts, Rooms and extension commands each
 draw a per-row checkbox in their pane, so they carry it. Custom commands, quicklinks and snippets do
 not: their panes list a record with its own switches, not a launcher checkbox — a hide nothing in
 Settings can visibly undo is a trap, not a shortcut.

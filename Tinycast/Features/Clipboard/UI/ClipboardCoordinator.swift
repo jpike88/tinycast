@@ -12,6 +12,9 @@ final class ClipboardCoordinator {
     private let paletteCoordinator: PaletteCoordinator
     /// Dialogs, for the one action here that can't be undone.
     private unowned let core: AppCore
+    /// One Copy Text at a time: a newer trigger cancels the helper an older one is waiting on.
+    private var textTask: Task<Void, Never>?
+    private var pasteSequence: PasteSequence?
 
     init(
         clipboardStore: ClipboardStore,
@@ -35,7 +38,7 @@ final class ClipboardCoordinator {
 
     /// Off means the poller stops, the database closes and nothing new is ever recorded.
     func applyEnabled() {
-        appIndex.setCommandsVisible([.clipboardHistory], settings.clipboardEnabled)
+        appIndex.setCommandsVisible([.clipboardHistory, .pasteSequentially], settings.clipboardEnabled)
         guard settings.clipboardEnabled else {
             core.applyClipboardTextSearch()
             clipboardManager.stop()
@@ -89,7 +92,7 @@ final class ClipboardCoordinator {
     func paste(_ item: ClipboardItem) {
         let previous = windowController.previousApp
         paletteCoordinator.hidePalette(restoreFocus: false)
-        // A write promotes the item, so follow it and keep the moved row highlighted.
+        // A paste promotes the item, so follow it and keep the moved row highlighted.
         if Paster.paste(item, store: clipboardStore, previousApp: previous) {
             selectClip(item)
         } else {
@@ -107,11 +110,38 @@ final class ClipboardCoordinator {
     }
 
     func pasteKeepingWindowOpen(_ item: ClipboardItem) {
-        if windowController.pasteKeepingWindowOpen(item, store: clipboardStore) {
-            selectClip(item)
-        } else {
+        if !windowController.pasteKeepingWindowOpen(item, store: clipboardStore) {
             reportUnavailable(item)
         }
+    }
+
+    /// Each press pastes the next older entry into the app in front, never promoting it.
+    func pasteNextInSequence() {
+        let now = Date()
+        // Dropped rather than queued, so a held shortcut cannot paste a burst of entries.
+        if let pasteSequence, pasteSequence.isSettling(at: now) { return }
+        guard let target = paletteCoordinator.targetApp else { return }
+        // A copy made just before the press must reach history, or the walk starts one entry late.
+        clipboardManager.prepareForTinycastPasteboardMutation()
+        var sequence = continuingPasteSequence(at: now)
+        while let item = sequence.next(in: clipboardStore.items) {
+            if paletteCoordinator.isVisible { paletteCoordinator.hidePalette() }
+            // An image or file gone from disk writes nothing, so the press moves on to the next.
+            guard Paster.pasteInPlace(item, store: clipboardStore, into: target) else { continue }
+            sequence.recordPaste(changeCount: NSPasteboard.general.changeCount, at: now)
+            pasteSequence = sequence
+            return
+        }
+        core.showMessage("Nothing left to paste", tone: .neutral)
+    }
+
+    /// A copy since the last press, or a long pause, starts the walk over from the newest entry.
+    private func continuingPasteSequence(at now: Date) -> PasteSequence {
+        let changeCount = NSPasteboard.general.changeCount
+        if let pasteSequence, pasteSequence.continues(changeCount: changeCount, at: now) {
+            return pasteSequence
+        }
+        return PasteSequence(history: clipboardStore.items, changeCount: changeCount, now: now)
     }
 
     /// A write only fails on a vanished file, and a palette that just closes explains nothing.
@@ -178,6 +208,37 @@ final class ClipboardCoordinator {
         paletteCoordinator.hidePalette(restoreFocus: false)
         Paster.copyPlainText(path)
         core.showMessage("Copied path")
+    }
+
+    /// ⇧⌘T / “Copy Text” — OCRs the image in the bundled helper and copies what it reads.
+    func copyImageText(_ item: ClipboardItem) {
+        guard let path = item.imagePath ?? item.filePath else { return }
+        paletteCoordinator.hidePalette(restoreFocus: false)
+        core.showProgress("Reading text…")
+        let changeCount = NSPasteboard.general.changeCount
+        textTask?.cancel()
+        textTask = Task {
+            do {
+                // A stat on an unmounted or network volume can stall, so it stays off the main actor.
+                let exists = await Task.detached { FileManager.default.fileExists(atPath: path) }.value
+                try Task.checkCancellation()
+                guard exists else {
+                    return item.kind == .file
+                        ? reportUnavailable(item)
+                        : core.showMessage("That image is no longer available.", tone: .danger)
+                }
+                let text = try await ClipboardTextWorker.extract(item)
+                guard !text.isEmpty else { return core.showMessage("No text found", tone: .neutral) }
+                guard NSPasteboard.general.changeCount == changeCount else {
+                    return core.showMessage("Clipboard changed, text not copied", tone: .neutral)
+                }
+                Paster.copyPlainText(text)
+                core.showMessage("Copied text")
+            } catch is CancellationError {
+            } catch {
+                core.showMessage("Couldn’t read the text", tone: .danger)
+            }
+        }
     }
 
     /// Nil once the file is gone, so every action reports rather than silently no-opping.

@@ -15,13 +15,16 @@ struct WindowManagementSettingsView: View {
                 enableTitle: "Enable window management",
                 enableSubtitle: "Moves the last window you used. Needs Accessibility.",
                 isEnabled: $settings.windowManagementEnabled,
-                showsInLauncher: $settings.windowManagementShowInLauncher)
+                showsInLauncher: $settings.windowManagementShowInLauncher,
+                showsIcon: true,
+                showsHeader: false)
 
             Group {
                 options
                 WindowLayoutsSection(
                     onEdit: { editor = WindowLayoutEditRequest(layout: $0) },
                     onDelete: { pendingDeletion = $0 })
+                RoomsSection()
                 FeatureCommandsSection(
                     owner: .windowManagement, anchor: .windowManagementLayoutCommands)
                 CustomWindowSizesSection(onEdit: {
@@ -72,8 +75,11 @@ struct WindowManagementSettingsView: View {
                     Text("\(settings.windowGap) pt")
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
-                    Stepper("Gap between windows", value: $settings.windowGap, in: 0...64, step: 2)
-                        .labelsHidden()
+                    Stepper(
+                        "Gap between windows", value: $settings.windowGap,
+                        in: WindowPlacementEngine.gapRange, step: 2
+                    )
+                    .labelsHidden()
                 }
             } label: {
                 SettingsRowTitle(.windowManagementOptions, "Gap between windows")

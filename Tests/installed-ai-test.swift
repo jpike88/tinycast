@@ -29,6 +29,77 @@ struct InstalledAITests {
         expect(answer.isEmpty, "a request whose child ignores stdin still returns")
     }
 
+    /// A fish user's PATH lives in config.fish, which the zsh fallback never reads.
+    private static func aFishLoginShellFindsWhatConfigFishAdds(_ fixture: Fixture) async {
+        guard
+            let fish = ["/opt/homebrew/bin/fish", "/usr/local/bin/fish"]
+                .map({ URL(fileURLWithPath: $0) })
+                .first(where: { FileManager.default.isExecutableFile(atPath: $0.path) })
+        else {
+            print("skip  fish login shell — fish is not installed")
+            return
+        }
+        let config = fixture.root.appending(path: "fish-config", directoryHint: .isDirectory)
+        let tools = fixture.root.appending(path: "fish-tools", directoryHint: .isDirectory)
+        let cli = tools.appending(path: "tc-fish-only-cli")
+        do {
+            try FileManager.default.createDirectory(
+                at: config.appending(path: "fish"), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
+            try "#!/bin/sh\n".write(to: cli, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
+            // The shape `mise activate fish` takes: PATH set only when interactive, after a greeting.
+            try """
+            echo 'Welcome to fish'
+            if status is-interactive
+                set -gx PATH \(tools.path) $PATH
+            end
+            """.write(
+                to: config.appending(path: "fish/config.fish"), atomically: true, encoding: .utf8)
+        } catch {
+            expect(false, "the fish fixture is written: \(error)")
+            return
+        }
+        let saved = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
+        setenv("XDG_CONFIG_HOME", config.path, 1)
+        defer {
+            if let saved { setenv("XDG_CONFIG_HOME", saved, 1) } else { unsetenv("XDG_CONFIG_HOME") }
+        }
+        let found = await ExecutableLocator.shellLookup("tc-fish-only-cli", shell: fish)
+        expect(found == cli.path, "a fish login shell finds a CLI only config.fish puts on PATH")
+        let zsh = await ExecutableLocator.shellLookup(
+            "tc-fish-only-cli", shell: URL(fileURLWithPath: "/bin/zsh"))
+        expect(zsh == nil, "the zsh that fish users fell back to cannot see that CLI")
+    }
+
+    /// Startup files print ahead of the lookup's answer, and logout files after it.
+    private static func anRcFileThatPrintsStillAnswers(_ fixture: Fixture) async {
+        let zdot = fixture.root.appending(path: "zdot-greeting", directoryHint: .isDirectory)
+        let tools = fixture.root.appending(path: "zsh-tools", directoryHint: .isDirectory)
+        let cli = tools.appending(path: "tc-zshrc-only-cli")
+        do {
+            try FileManager.default.createDirectory(at: zdot, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
+            try "#!/bin/sh\n".write(to: cli, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
+            try "echo 'Good morning'\nexport PATH=\"\(tools.path):$PATH\"\n".write(
+                to: zdot.appending(path: ".zshrc"), atomically: true, encoding: .utf8)
+            try "echo 'Goodbye'\n".write(
+                to: zdot.appending(path: ".zlogout"), atomically: true, encoding: .utf8)
+        } catch {
+            expect(false, "the zsh fixture is written: \(error)")
+            return
+        }
+        setenv("ZDOTDIR", zdot.path, 1)
+        defer { setenv("ZDOTDIR", fixture.root.path, 1) }
+        let zsh = await ExecutableLocator.shellLookup(
+            "tc-zshrc-only-cli", shell: URL(fileURLWithPath: "/bin/zsh"))
+        expect(zsh == cli.path, "a .zshrc greeting and a .zlogout farewell leave the lookup its answer")
+        let nu = await ExecutableLocator.shellLookup(
+            "tc-zshrc-only-cli", shell: URL(fileURLWithPath: "/opt/homebrew/bin/nu"))
+        expect(nu == cli.path, "a login shell with neither syntax, like nushell, still asks zsh")
+    }
+
     static func main() async {
         guard let fixture = Fixture() else {
             expect(false, "the installed CLI fixture starts")
@@ -56,7 +127,12 @@ struct InstalledAITests {
         await concurrentCallsAreAskedOneAtATime(fixture)
         await aCrashedTurnsFilesAreRemovedAtLaunch(fixture)
         await aManagedMCPPolicyLeavesBothFlagsOff(fixture)
+        await aReadersVariablesReachTheToolButNeverItsIsolation(fixture)
+        await aSetCommandPathIsWhatRuns(fixture)
+        await aCommandPathWithNothingThereFailsTheTurn(fixture)
         await aChildThatNeverReadsCannotKillTheApp()
+        await aFishLoginShellFindsWhatConfigFishAdds(fixture)
+        await anRcFileThatPrintsStillAnswers(fixture)
 
         print("\(passes) passed, \(failures) failed")
         if failures > 0 { exit(1) }
@@ -204,6 +280,34 @@ struct InstalledAITests {
         expect(
             models.first?.efforts.map(\.id) == ["low", "high"],
             "a Claude model carries only the efforts the CLI says it supports")
+        let newer = """
+            {"type":"control_response","response":{"subtype":"success","request_id":"x","response":\
+            {"models":[{"value":"opus","displayName":"Opus 5.5","resolvedModel":"claude-opus-5-5",\
+            "description":"Best for everyday, complex tasks"},{"value":"claude-opus-4-8",\
+            "displayName":"Opus 4.8","resolvedModel":"claude-opus-4-8",\
+            "description":"Best for everyday, complex tasks"}]}}}
+            """
+        let signedIn = """
+            {"type":"control_response","response":{"subtype":"success","request_id":"x","response":\
+            {"models":[],"account":{"email":"reader@example.com","subscriptionType":"max",\
+            "apiProvider":"firstParty"}}}}
+            """
+        expect(
+            InstalledAIModel.claudeAccount(signedIn)
+                == InstalledAIAccount(email: "reader@example.com", plan: "max")
+                && InstalledAIModel.claudeAccount(signedIn)?.planTitle == "Max",
+            "the answer that lists Claude's models also names the account and its plan")
+        expect(
+            InstalledAIModel.claudeAccount(newer) == nil,
+            "and an answer that names no account shows none")
+        expect(
+            InstalledAIAccount(email: nil, plan: "Claude Max").planTitle == "Max"
+                && InstalledAIAccount(email: nil, plan: "team").planTitle == "Team"
+                && InstalledAIAccount(email: nil, plan: " ").planTitle == nil,
+            "a plan reads the same whether or not the CLI prefixed it with the tool's name")
+        expect(
+            InstalledAIModel.claudeCatalog(newer).map(\.name) == ["Claude Opus 5.5", "Claude Opus 4.8"],
+            "a CLI that describes a model without its version is named by its display name")
         let frame = InstalledAIStreamDecoder.decode(
             Data(
                 #"{"type":"stream_event","event":{"delta":{"type":"thinking_delta","thinking":"Plan"}}}"#.utf8
@@ -576,6 +680,56 @@ struct InstalledAITests {
             "while one on Unlimited with no server to run is still a single request")
     }
 
+    private static func aReadersVariablesReachTheToolButNeverItsIsolation(
+        _ fixture: Fixture
+    ) async {
+        let launch = InstalledAILaunch(
+            environment: [
+                "TC_READER_PROBE": "from-the-reader", "OPENCODE_CONFIG_CONTENT": "{}",
+                "not a name": "dropped"
+            ])
+        let events = await fixture.events(
+            kind: .openCode, model: "provider/model", effort: nil, launch: launch)
+        expect(events.last == .finished, "a tool launched with the reader's variables still runs")
+        expect(
+            fixture.lastLine("opencode-reader-environment.log") == "from-the-reader",
+            "a variable the reader set reaches the tool")
+        expect(
+            fixture.lastLine("opencode-environment.log").contains("\"permission\":\"deny\""),
+            "one Tinycast sets to keep the tool inside the chat keeps Tinycast's value")
+    }
+
+    private static func aSetCommandPathIsWhatRuns(_ fixture: Fixture) async {
+        guard let stub = fixture.executables[.openCode] else { return }
+        let elsewhere = fixture.root.appending(path: "elsewhere", directoryHint: .isDirectory)
+        let copy = elsewhere.appending(path: "opencode")
+        do {
+            try FileManager.default.createDirectory(
+                at: elsewhere, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: stub, to: copy)
+        } catch {
+            expect(false, "the second copy of the command is written")
+            return
+        }
+        let events = await fixture.events(
+            kind: .openCode, model: "provider/model", effort: nil,
+            launch: InstalledAILaunch(commandPath: copy.path))
+        expect(events.last == .finished, "a turn runs from a command path the reader set")
+        expect(
+            fixture.lastLine("opencode-path.log").hasSuffix("elsewhere/opencode"),
+            "and it is that command, not the one a lookup finds first")
+    }
+
+    private static func aCommandPathWithNothingThereFailsTheTurn(_ fixture: Fixture) async {
+        let missing = fixture.root.appending(path: "nowhere/claude").path
+        let error = await fixture.streamError(
+            kind: .claude, model: "sonnet", effort: nil,
+            launch: InstalledAILaunch(commandPath: missing))
+        expect(
+            error?.contains("Nothing can be run at") == true,
+            "a command path with nothing to run fails the turn instead of running another copy")
+    }
+
     /// An admin's policy makes the CLI reject both flags, so the route passes neither.
     private static func aManagedMCPPolicyLeavesBothFlagsOff(_ fixture: Fixture) async {
         let policy = fixture.root.appending(path: "managed-mcp.json")
@@ -676,12 +830,14 @@ private final class Fixture {
 
     func events(
         kind: InstalledAIKind, model: String, effort: String?,
+        launch: InstalledAILaunch = InstalledAILaunch(),
         toolServers: AIToolServerSession? = nil
     ) async -> [AIStreamEvent] {
         guard let executable = executables[kind] else { return [] }
         let provider = InstalledCLIProvider(
             kind: kind, executable: kind == .openCode ? nil : executable,
-            model: model, effort: effort, workspace: workspace, toolServers: toolServers)
+            model: model, effort: effort, workspace: workspace, launch: launch,
+            toolServers: toolServers)
         do {
             var events: [AIStreamEvent] = []
             for try await event in provider.stream(request) { events.append(event) }
@@ -694,12 +850,14 @@ private final class Fixture {
 
     func streamError(
         kind: InstalledAIKind, model: String, effort: String?,
+        launch: InstalledAILaunch = InstalledAILaunch(),
         toolServers: AIToolServerSession? = nil
     ) async -> String? {
         guard let executable = executables[kind] else { return nil }
         let provider = InstalledCLIProvider(
             kind: kind, executable: kind == .openCode ? nil : executable,
-            model: model, effort: effort, workspace: workspace, toolServers: toolServers)
+            model: model, effort: effort, workspace: workspace, launch: launch,
+            toolServers: toolServers)
         do {
             for try await _ in provider.stream(request) {}
             return nil
@@ -775,6 +933,10 @@ private final class Fixture {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return isSatisfied()
+    }
+
+    func lastLine(_ name: String) -> String {
+        read(name).split(separator: "\n").last.map(String.init) ?? ""
     }
 
     func read(_ name: String) -> String {

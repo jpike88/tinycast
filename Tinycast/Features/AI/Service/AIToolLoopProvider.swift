@@ -64,8 +64,7 @@ struct AIToolLoopProvider: AIProvider {
                 continuation.yield(
                     .toolCall(
                         id: call.id, origin: tool?.origin ?? "", title: tool?.title ?? call.name,
-                        detail: call.name == BashToolSchema.toolName
-                            ? BashToolSchema.command(in: call.arguments) : nil))
+                        detail: AIToolLoopProvider.detail(of: tool, for: call)))
                 let result = await bounded(invoke(call), spent: &spent)
                 continuation.yield(.toolResult(id: call.id, isError: result.isError))
                 carried += result.content.utf8.count
@@ -97,6 +96,18 @@ struct AIToolLoopProvider: AIProvider {
             }
         }
         return (text, calls)
+    }
+
+    /// What a transcript row's code block shows: the command, or the path a call touches.
+    static func detail(of tool: AITool?, for call: AIToolCall) -> String? {
+        switch tool?.name ?? call.name {
+        case BashToolSchema.toolName: return BashToolSchema.command(in: call.arguments)
+        case let name where FileSystemToolSchema.isBuiltinTool(name):
+            return FileSystemToolSchema.detail(in: call.arguments)
+        case CalcToolSchema.name:
+            return CalcToolSchema.query(from: call.arguments)
+        default: return nil
+        }
     }
 
     private func bounded(_ result: AIToolResult, spent: inout Int) -> AIToolResult {

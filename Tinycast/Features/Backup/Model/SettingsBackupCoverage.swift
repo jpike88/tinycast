@@ -11,6 +11,7 @@ enum SettingsBackupCoverage {
         "hyperKey": .hyperKey,
         "hyperKeyIncludesShift": .hyperKeyIncludesShift,
         "hyperKeyQuickPress": .hyperKeyQuickPress,
+        "showInMenuBar": .showInMenuBar,
         "emojiSkinTone": .emojiSkinTone,
         "emojiGridColumns": .emojiGridColumns,
         "popToRootSeconds": .popToRootTimeout,
@@ -42,6 +43,7 @@ enum SettingsBackupCoverage {
         "windowGap": .windowGap,
         "windowCycle": .windowCycle,
         "windowLayoutsShowInLauncher": .windowLayoutsShowInLauncher,
+        "windowRoomsShowInLauncher": .windowRoomsShowInLauncher,
         "quicklinksEnabled": .quicklinksEnabled,
         "quicklinksShowInLauncher": .quicklinksShowInLauncher,
         "quicklinkOpensNewWindow": .quicklinkOpensNewWindow,
@@ -64,8 +66,7 @@ enum SettingsBackupCoverage {
 
     /// The `SettingsData` fields no `AppSettings` key stands behind, and what they read instead.
     static let externallySourced: [String: String] = [
-        "launchAtLogin": "Read from LaunchAtLogin, which owns the login item, not UserDefaults.",
-        "showInMenuBar": "SettingsKey.showInMenuBar — shared with MenuBarExtra, not owned here."
+        "launchAtLogin": "Read from LaunchAtLogin, which owns the login item, not UserDefaults."
     ]
 
     /// Keys kept out of a backup on purpose, each with the reason it has to stay out.
@@ -84,6 +85,8 @@ enum SettingsBackupCoverage {
         AppSettingsKey.extensionsEnabled.rawValue:
             "Doubles as consent to run third-party JavaScript; an import must not switch it on.",
         AppSettingsKey.palettePosition.rawValue:
+            "Machine-local geometry: every entry names a display this Mac has, and no other one.",
+        AppSettingsKey.paletteExpandedCenterDisplays.rawValue:
             "Machine-local geometry: every entry names a display this Mac has, and no other one.",
         AppSettingsKey.autoSwitchInputSource.rawValue:
             "Names a keyboard input source installed on this Mac; another Mac may not have it.",
@@ -104,13 +107,21 @@ enum SettingsBackupCoverage {
         AppSettingsKey.aiConnections.rawValue:
             "AI connection metadata stays on the Mac with the Keychain credentials it describes.",
         AppSettingsKey.aiDefaultModel.rawValue:
-            "The default model names an external AI destination; importing must not choose one.",
+            "The AI Chat default model names an external AI destination; importing must not choose one.",
+        AppSettingsKey.aiQuickAIDefaultModel.rawValue:
+            "The Quick AI default model names an external AI destination; importing must not choose one.",
         AppSettingsKey.aiWebSearch.rawValue:
             "Whether prompts may reach a search engine is a choice each Mac makes for itself.",
         AppSettingsKey.aiBashToolEnabled.rawValue:
             "Arming a shell tool is a capability granted on this Mac; an import must not grant it.",
         AppSettingsKey.aiBashTrust.rawValue:
             "A standing shell consent is only ever given in person, never by an import.",
+        AppSettingsKey.aiFileToolTrust.rawValue:
+            "A standing consent to write, delete or open files is only ever given in person, never "
+                + "by an import.",
+        AppSettingsKey.aiFileToolEnabled.rawValue:
+            "Whether a model may touch this account's files at all is a capability granted in "
+                + "person; an import must not grant it.",
         AppSettingsKey.aiSystemPrompt.rawValue:
             "Standing instructions to a model are the one AI setting that changes every answer; an "
             + "import must not carry them onto another Mac unseen.",
@@ -129,6 +140,14 @@ enum SettingsBackupCoverage {
         AppSettingsKey.aiToolRounds.rawValue:
             "Decides how much a tool-driven reply may spend on this Mac's own connections; no other "
             + "AI setting travels, and an import must not raise a spending limit unasked.",
+        AppSettingsKey.aiShownModels.rawValue:
+            "Names the models of this Mac's own installed tools and connections, which another Mac "
+            + "may not have.",
+        AppSettingsKey.aiDisabledRoutes.rawValue:
+            "Names this Mac's own API connections and on-device model, which travel in no backup.",
+        AppSettingsKey.aiInstalledOverrides.rawValue:
+            "Names a command to run and the variables to run it with; an import must never decide "
+            + "which program this Mac launches.",
         AppSettingsKey.mcpEnabled.rawValue:
             "Doubles as consent to run third-party MCP servers, one of which is a local process; a "
             + "flag that grants a capability is never carried by a backup.",
@@ -150,6 +169,12 @@ enum SettingsBackupCoverage {
         AppSettingsKey.quickActionInstructions.rawValue:
             "Custom model instructions change transformed results and must not move unseen.",
         AppSettingsKey.quickActionLanguage.rawValue:
-            "Follows the language the person at this Mac reads, not the one who wrote the backup."
+            "Follows the language the person at this Mac reads, not the one who wrote the backup.",
+        AppSettingsKey.snippetsFolder.rawValue:
+            "Names a folder on this Mac; the one a backup lands on may not have it.",
+        AppSettingsKey.notesFolder.rawValue:
+            "Names a folder on this Mac; the one a backup lands on may not have it.",
+        AppSettingsKey.settingsFileEnabled.rawValue:
+            "Lets a file on this Mac change its settings; an import must not hand that to another."
     ]
 }
