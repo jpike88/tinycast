@@ -367,6 +367,9 @@ final class AIChatCoordinator {
             if AIWebSearch.isBuiltIn(call.name) {
                 return await BraveSearchService.invoke(call)
             }
+            if ReadPageTool.isBuiltIn(call.name) {
+                return await ReadPageService.invoke(call)
+            }
             if CalcToolSchema.isBuiltIn(call.name) {
                 return await bash.invokeCalc(call)
             }
@@ -521,6 +524,11 @@ final class AIChatCoordinator {
         }
         // Armed on API routes only, at large or narrowed to it; a named server says otherwise.
         armed.append(CalcToolSchema.tool())
+        if core.aiSettings.readPageToolEnabled, !excluded.contains(ReadPageTool.slug),
+            slug == nil
+        {
+            armed.append(ReadPageTool.tool())
+        }
         if core.aiSettings.bashToolEnabled, !excluded.contains(BashToolSchema.slug),
             slug == nil
         {
@@ -549,10 +557,17 @@ final class AIChatCoordinator {
         }
     }
 
+    /// Off means fully off: the tool leaves every turn's menu, and the flag is the only state.
+    func setReadPageToolEnabled(_ enabled: Bool) {
+        core.aiSettings.readPageToolEnabled = enabled
+    }
+
     /// Whether the menu shows the built-in's row at all: a tool no one turned on is less.
     var isBashToolArmed: Bool { core.aiSettings.bashToolEnabled }
     /// Same for the Files built-ins; a chat can still switch them out of its own turns.
     var isFileToolArmed: Bool { core.aiSettings.fileToolEnabled }
+    /// Same for the page reader; a chat can still switch it out of its own turns.
+    var isReadPageToolArmed: Bool { core.aiSettings.readPageToolEnabled }
     /// The servers a chat's tools menu offers; empty when MCP is off or nothing is set up.
     var mcpServers: [MCPServer] { core.mcpCoordinator.servers }
 

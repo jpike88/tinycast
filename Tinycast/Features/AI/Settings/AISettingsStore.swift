@@ -51,6 +51,11 @@ final class AISettingsStore {
     var fileToolEnabled: Bool {
         didSet { defaults.set(fileToolEnabled, forKey: AppSettingsKey.aiFileToolEnabled.rawValue) }
     }
+    /// On with everything fine: a fetch is a read this Mac's network already makes every day,
+    /// bound like the built-ins to be one page, never a shell and never the local network.
+    var readPageToolEnabled: Bool {
+        didSet { defaults.set(readPageToolEnabled, forKey: AppSettingsKey.aiReadPageToolEnabled.rawValue) }
+    }
     /// Same ladder as bash; `never` takes the whole Files set back out of the model's menu.
     var fileToolTrust: MCPTrust {
         didSet { defaults.set(fileToolTrust.rawValue, forKey: AppSettingsKey.aiFileToolTrust.rawValue) }
@@ -137,6 +142,8 @@ final class AISettingsStore {
         fileToolTrust =
             MCPTrust(rawValue: defaults.string(forKey: AppSettingsKey.aiFileToolTrust.rawValue) ?? "")
             ?? .ask
+        readPageToolEnabled =
+            defaults.object(forKey: AppSettingsKey.aiReadPageToolEnabled.rawValue) as? Bool ?? true
         systemPrompt = defaults.string(forKey: AppSettingsKey.aiSystemPrompt.rawValue) ?? ""
         systemPromptEnabled =
             defaults.object(forKey: AppSettingsKey.aiSystemPromptEnabled.rawValue) as? Bool ?? true

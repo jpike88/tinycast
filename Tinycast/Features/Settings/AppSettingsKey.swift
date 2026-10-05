@@ -90,6 +90,7 @@ enum AppSettingsKey: String, CaseIterable {
     case aiBashTrust = "aiBashTrust"
     case aiFileToolEnabled = "aiFileToolEnabled"
     case aiFileToolTrust = "aiFileToolTrust"
+    case aiReadPageToolEnabled = "aiReadPageToolEnabled"
     case aiShownModels = "aiShownModels"
     case aiDisabledRoutes = "aiDisabledRoutes"
     case aiInstalledOverrides = "aiInstalledOverrides"

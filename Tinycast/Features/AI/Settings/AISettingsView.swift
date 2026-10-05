@@ -185,6 +185,16 @@ struct AISettingsView: View {
                     Text("Never Allow keeps the tools out entirely.")
                 }
             }
+            Toggle(
+                isOn: Binding(
+                    get: { settings.readPageToolEnabled },
+                    set: { core.aiChatCoordinator.setReadPageToolEnabled($0) }))
+            {
+                SettingsRowTitle(.aiChat, "Read-page tool")
+                Text(
+                    "API models may fetch one web page per call and read it as text — no shell, "
+                        + "no curl, never the local network. Pages past the size cap arrive cut.")
+            }
         } header: {
             SettingsSectionHeader(.aiChat)
         }

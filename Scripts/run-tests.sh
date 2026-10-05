@@ -591,6 +591,10 @@ run ai-provider-test       Tinycast/Features/Settings/AppSettingsKey.swift \
 run ai-web-search-test     Tinycast/Features/AI/Model/AITool.swift \
                            Tinycast/Features/AI/Model/JSONValue.swift \
                            Tinycast/Features/AI/Model/AIWebSearch.swift
+run read-page-test         Tinycast/Features/AI/Model/AITool.swift \
+                           Tinycast/Features/AI/Model/JSONValue.swift \
+                           Tinycast/Features/AI/Model/ReadPageTool.swift \
+                           Tinycast/Features/AI/Service/ReadPageService.swift
 run calc-tool-test         Tinycast/Features/Calculator/Model/*.swift \
                            Tinycast/Features/AI/Model/AITool.swift \
                            Tinycast/Features/AI/Model/JSONValue.swift \
@@ -614,6 +618,7 @@ run ai-chat-test           Tinycast/Features/AI/Model/AIRequest.swift \
                            Tinycast/Features/AI/Model/ChatToolScope.swift \
                            Tinycast/Features/AI/Model/BashToolSchema.swift \
                            Tinycast/Features/AI/Model/FileSystemToolSchema.swift \
+                           Tinycast/Features/AI/Model/ReadPageTool.swift \
                            Tinycast/Features/AI/Model/MarkdownBlock.swift \
                            Tinycast/Features/AI/Model/MarkdownMath.swift \
                            Tinycast/Features/AI/Model/MathFormula.swift \

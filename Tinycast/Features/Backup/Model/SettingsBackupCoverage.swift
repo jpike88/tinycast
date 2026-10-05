@@ -120,6 +120,9 @@ enum SettingsBackupCoverage {
         AppSettingsKey.aiFileToolEnabled.rawValue:
             "Whether a model may touch this account's files at all is a capability granted in "
                 + "person; an import must not grant it.",
+        AppSettingsKey.aiReadPageToolEnabled.rawValue:
+            "Whether the model may fetch pages from the web is a capability granted on this Mac; "
+                + "an import must not grant it.",
         AppSettingsKey.aiSystemPrompt.rawValue:
             "Standing instructions to a model are the one AI setting that changes every answer; an "
             + "import must not carry them onto another Mac unseen.",

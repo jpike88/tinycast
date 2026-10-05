@@ -57,6 +57,7 @@ enum SettingsFileSchema {
         case .appleShortcutsEnabled: return bind(settings, \.appleShortcutsEnabled)
         case .aiEnabled: return bind(settings, \.aiEnabled)
         case .aiWebSearch: return bind(ai, \.webSearchEnabled)
+        case .aiReadPage: return bind(ai, \.readPageToolEnabled)
         case .aiSystemPrompt: return bind(ai, \.systemPrompt)
         case .aiSystemPromptEnabled: return bind(ai, \.systemPromptEnabled)
         case .aiRetention: return bind(ai, \.retention)

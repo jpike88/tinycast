@@ -106,6 +106,8 @@ struct AIToolLoopProvider: AIProvider {
             return FileSystemToolSchema.detail(in: call.arguments)
         case CalcToolSchema.name:
             return CalcToolSchema.query(from: call.arguments)
+        case ReadPageTool.name:
+            return ReadPageTool.detail(in: call.arguments)
         default: return nil
         }
     }

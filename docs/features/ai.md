@@ -777,6 +777,30 @@ holds `aiFileToolEnabled` with it: both keys are excluded from backups, since al
 to touch files is a consent given on this Mac in person, and `setFileToolEnabled` off drops every
 per-chat grant. In a chat's tools menu the set is one row, switchable off by its `files`
 pseudo-slug like Bash's.
+
+### The page reader built-in
+
+HTTP routes that call tools are also offered Tinycast's **`read_page`** tool, one URL per call,
+so a model can read a web page without spawning a shell and curl. `ReadPageTool` is pure Model:
+the schema, the URL read, and the conversion — a hand-rolled scanner (no HTML dependency) that
+drops head, scripts, styles, controls and heading-side chrome, prefers the `<main>` or lone
+`<article>` region when the page names one, and prints what is left markdown-shaped: headings
+as `#` lines, `- ` and `1. ` lists, ` | ` table rows, fenced `<pre>` blocks, inline `code`, and
+links as `[text](url)` resolved against the page's own base. The result is bounded twice: the
+fetch stops at 1 MiB and says so in a trailing note, then the tool loop's own result budget
+applies on top. `ReadPageService` is the one caller — a `.ephemeral`, `urlCache = nil`, no
+cookie-jar session like every other networked surface, one GET whose User-Agent names
+Tinycast, and every failure (no args, a private host, an HTTP error, non-text media, a network
+break) as a tool *result the model reads*. Only public http(s) fetches: local, private,
+link-local and metadata addresses are refused, so the built-in cannot point at this Mac or
+anything beside it — the same gap bash curl's consent dialog covers, minus the consent because
+a fetch changes nothing this side of the wire.
+
+Settings holds `aiReadPageToolEnabled`, on by default and, like the built-ins' flags, never
+backed up: the Settings row explains it, and a chat's tools menu
+switches it out by its `read_page` pseudo-slug like Bash's and Files'. The key rides the
+settings file as `ai.readPage`. `read-page-test` pins the schema,
+the URL refusals, the conversion, the media routing and the cut note.
 Nothing *guesses* at a capability: images ride on what the model's own catalog said, and a vendor
 API that does not take one simply returns its error. What is gated is only what a route provably
 cannot carry — a PDF to a text transport — refused at the composer with a HUD naming the reason.
