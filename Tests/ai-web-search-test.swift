@@ -28,7 +28,7 @@ struct AIWebSearchTests {
 
     static func toolCatalogIsOffered() {
         let tool = AIWebSearch.tool()
-        expect(tool.name == "web_search", "the built-in tool is named web_search")
+        expect(tool.name == "web_lookup", "the built-in tool is named web_lookup")
         expect(tool.origin == "Tinycast", "the transcript row says the call came from Tinycast")
         expect(tool.title == "Web search", "the tool carries a human title")
         expect(!tool.description.isEmpty, "the model is told when to call it")
@@ -41,7 +41,8 @@ struct AIWebSearchTests {
         expect(
             JSONSerialization.isValidJSONObject(tool.parameters.jsonObject),
             "the schema re-encodes as a valid JSON body")
-        expect(AIWebSearch.isBuiltIn("web_search"), "a call by that name is built-in")
+        expect(AIWebSearch.isBuiltIn("web_lookup"), "a call by that name is built-in")
+        expect(!AIWebSearch.isBuiltIn("web_search"), "the name gateways reserve is not ours")
         expect(!AIWebSearch.isBuiltIn("mcp__a__b"), "an MCP tool never routes to the built-in one")
     }
 

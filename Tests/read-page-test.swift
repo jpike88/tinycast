@@ -50,7 +50,7 @@ struct ReadPageTests {
             "the schema re-encodes as a valid JSON body")
         expect(ReadPageTool.isBuiltIn("read_page"), "a call by that name is built-in")
         expect(!ReadPageTool.isBuiltIn("mcp__a__b"), "an MCP tool never routes to the built-in")
-        expect(!ReadPageTool.isBuiltIn("web_search"), "another built-in keeps its own name")
+        expect(!ReadPageTool.isBuiltIn("web_lookup"), "another built-in keeps its own name")
     }
 
     static func urlReadingRefusesWhatIsNotAPublicPage() {

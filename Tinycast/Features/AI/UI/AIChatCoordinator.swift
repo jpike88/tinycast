@@ -312,7 +312,7 @@ final class AIChatCoordinator {
         return can.tools && !(model(for: chat)?.runsItsOwnTools == true)
     }
 
-    /// On a route with no native search, the same toggle arms Tinycast's own `web_search` tool,
+    /// On a route with no native search, the same toggle arms Tinycast's own `web_lookup` tool,
     /// which the loop executes against Brave Search; OpenRouter keeps its own layer.
     private func searchTool(for chat: AIChatState) -> AITool? {
         let can = capabilities(for: chat)

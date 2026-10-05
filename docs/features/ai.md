@@ -726,8 +726,8 @@ transport code at all.
 | OpenCode command | never | never | never | the global config still loads — `permission: deny` refuses the call |
 | Cursor command | never | never | never | the global config still loads — ask mode and withheld approval refuse the call |
 | OpenRouter | `plugins: [{id: "web"}]` — OpenRouter's own layer, any model | `image_url` part, only for models whose catalog lists the `image` modality | never yet — its catalog publishes a `file` modality Tinycast does not read | `tools` + `role: "tool"` turns |
-| OpenAI | a `web_search` tool call on the loop — Brave Search reads `Settings` for its key | `image_url` part, assumed supported | `file` part with `filename` and a `file_data` data URL | `tools` + `role: "tool"` turns |
-| Gemini / compatible | a `web_search` tool call on the loop — Brave Search reads `Settings` for its key | `image_url` part, assumed supported | never — a gateway that has not implemented the part bills the upload before rejecting it | `tools` + `role: "tool"` turns |
+| OpenAI | a `web_lookup` tool call on the loop — Brave Search reads `Settings` for its key | `image_url` part, assumed supported | `file` part with `filename` and a `file_data` data URL | `tools` + `role: "tool"` turns |
+| Gemini / compatible | a `web_lookup` tool call on the loop — Brave Search reads `Settings` for its key | `image_url` part, assumed supported | never — a gateway that has not implemented the part bills the upload before rejecting it | `tools` + `role: "tool"` turns |
 | Anthropic | not offered | base64 `image` block | base64 `document` block, ahead of the text block | `tools` + `tool_use` / `tool_result` blocks |
 | Anthropic Compatible | not offered | base64 `image` block, assumed supported | never — an endpoint that has not implemented the part bills the upload before rejecting it | `tools` + `tool_use` / `tool_result` blocks |
 
@@ -750,9 +750,11 @@ Web search is a Settings → AI toggle, `aiWebSearch`, off by default: a prompt 
 only once the user has opted in.
 It's still excluded from backups — which Mac may send prompts to a search engine is that Mac's call.
 A route without native search of its own is not a route without web search: the same toggle arms
-Tinycast's built-in `web_search` tool on HTTP routes that call tools — the `AIToolLoopProvider`'s
+Tinycast's built-in `web_lookup` tool on HTTP routes that call tools — the `AIToolLoopProvider`'s
 tool list leads with it, and its calls execute against **Brave Search**
-(`api.search.brave.com/res/v1/web/search`) instead of the MCP path.
+(`api.search.brave.com/res/v1/web/search`) instead of the MCP path. The name is deliberate: gateways
+reserve `web_search` for their own layer — Inco's Anthropic-shaped route silently drops a client
+tool by that name — so the built-in never uses it.
 `AIWebSearch` is pure Model: the endpoint (one query, one page of results), the numbered
 title/link/snippet text the model reads, and the failure messages are pinned by `ai-web-search-test`.
 `BraveSearchService` is the one caller: a private `.ephemeral`, `urlCache = nil` session, GET with

@@ -1,9 +1,10 @@
 import Foundation
 
-/// The built-in `web_search` tool: one query to Brave Search, whose results the model reads.
+/// The built-in `web_lookup` tool: one query to Brave Search, whose results the model reads.
 /// Pure: the endpoint, the request and the text the model sees are pinned by `ai-web-search-test`.
 enum AIWebSearch {
-    static let name = "web_search"
+    // `web_search` is reserved by API gateways — Inco silently drops a client tool of that name.
+    static let name = "web_lookup"
     /// What the transcript row says the call came from, distinct from any MCP server's title.
     static let origin = "Tinycast"
     static let title = "Web search"

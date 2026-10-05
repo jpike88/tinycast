@@ -250,7 +250,7 @@ struct AISettingsView: View {
 
 }
 
-private /// The built-in `web_search` tool's settings: only the Brave Search API key it calls with.
+private /// The built-in `web_lookup` tool's settings: only the Brave Search API key it calls with.
 struct WebSearchSettingsRow: View {
     let settings: AISettingsStore
     let core: AppCore
