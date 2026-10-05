@@ -166,7 +166,7 @@ private struct AIChatView: View {
                     onConfigure: onConfigure)
             } else {
                 ChatTranscriptView(
-                    messages: chat.session.messages,
+                    messages: chat.displayMessages,
                     status: chat.liveStatus,
                     usage: chat.usage,
                     surface: .palette,

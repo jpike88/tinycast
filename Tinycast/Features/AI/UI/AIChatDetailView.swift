@@ -76,7 +76,7 @@ struct AIChatDetailView: View {
         } else {
             let occurrences = find.occurrences(in: chat.session.messages)
             ChatTranscriptView(
-                messages: chat.session.messages, status: chat.liveStatus, usage: chat.usage,
+                messages: chat.displayMessages, status: chat.liveStatus, usage: chat.usage,
                 surface: .window,
                 onRegenerate: chat.isStreaming ? nil : { coordinator.regenerate(in: chat) },
                 find: find.isSearching

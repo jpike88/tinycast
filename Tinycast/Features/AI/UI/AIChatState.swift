@@ -30,8 +30,25 @@ final class AIChatState {
     @ObservationIgnored var onReplyFinished: (@MainActor (AIChatState) -> Void)?
     @ObservationIgnored private var flushTask: Task<Void, Never>?
     @ObservationIgnored private var lastFlush = ContinuousClock().now
+    /// Characters of the newest reply the transcript has been handed; the rest waits for pace.
+    private(set) var revealCount = 0
+    /// Set when the route is done but the reveal still owes the transcript its tail.
+    @ObservationIgnored private var isFinishing = false
+    /// The cadence the route's arrivals measured over closed spans, or nil until one has.
+    @ObservationIgnored private var measuredPace: Double?
+    /// When the arrival span opened, and how many characters landed while it ran.
+    @ObservationIgnored private var spanStart: ContinuousClock.Instant?
+    @ObservationIgnored private var arrivedInSpan = 0
+    @ObservationIgnored private var revealTask: Task<Void, Never>?
+    /// The fraction of a character the last step could not show yet, so slow paces stay exact.
+    @ObservationIgnored private var revealCarry = 0.0
+    private let revealPolicy = AIRevealPolicy()
 
     private static let flushInterval: Duration = .milliseconds(40)
+    private static let revealCadence: Duration = .milliseconds(33)
+    /// A span closes only past this, so it covers a whole pause plus the burst that opened it —
+    /// the split flushes inside one burst must never read a surge where the route has none.
+    private static let measureSpan: Duration = .milliseconds(250)
 
     init(history: ChatHistoryStore) {
         self.history = history
@@ -89,6 +106,12 @@ final class AIChatState {
         isStreaming = true
         isThinking = false
         reasoningStartedAt = nil
+        revealCount = 0
+        isFinishing = false
+        measuredPace = nil
+        spanStart = nil
+        arrivedInSpan = 0
+        revealCarry = 0
         history.save(session)
 
         replyGeneration += 1
@@ -102,14 +125,31 @@ final class AIChatState {
                     self.receive(event)
                 }
                 guard let self, !Task.isCancelled, self.replyGeneration == generation,
-                    self.isStreaming
+                    self.isStreaming, !self.isFinishing
                 else { return }
-                self.finishLast(state: .failed, fallback: "The response ended unexpectedly.")
+                self.finalizeReply(state: .failed, fallback: "The response ended unexpectedly.")
             } catch {
                 guard let self, !Task.isCancelled, self.replyGeneration == generation,
                     self.isStreaming
                 else { return }
-                self.finishLast(state: .failed, fallback: error.localizedDescription)
+                self.finalizeReply(state: .failed, fallback: error.localizedDescription)
+            }
+        }
+        startReveal()
+    }
+
+    /// One ticker for the reply: it hands text to the transcript at the reveal's pace.
+    private func startReveal() {
+        revealTask?.cancel()
+        let seed = ContinuousClock().now
+        revealTask = Task { [weak self] in
+            var stamp = seed
+            while let self, !Task.isCancelled, self.isStreaming {
+                try? await Task.sleep(for: Self.revealCadence)
+                guard !Task.isCancelled, self.isStreaming else { return }
+                let now = ContinuousClock().now
+                self.advanceReveal(from: stamp, to: now)
+                stamp = now
             }
         }
     }
@@ -161,7 +201,7 @@ final class AIChatState {
             discardPendingText()
             return
         }
-        finishLast(state: .failed, fallback: "Cancelled")
+        finalizeReply(state: .failed, fallback: "Cancelled")
     }
 
     func startNewChat() {
@@ -208,6 +248,17 @@ final class AIChatState {
 
     var lastAssistantText: String? {
         session.messages.last(where: { $0.role == .assistant && !$0.text.isEmpty })?.text
+    }
+
+    /// The transcript as the bubbles show it: a reply still typing is held back to its reveal
+    /// line, while the replies in `session` keep their whole text for anything but display.
+    var displayMessages: [ChatMessage] {
+        var messages = session.messages
+        guard isStreaming, let last = messages.last, last.role == .assistant,
+            last.state == .streaming, revealCount < last.text.count
+        else { return messages }
+        messages[messages.count - 1].text = String(last.text.prefix(min(revealCount, last.text.count)))
+        return messages
     }
 
     private func receive(_ event: AIStreamEvent) {
@@ -264,7 +315,11 @@ final class AIChatState {
             message.usage = usage
             session.replaceLast(with: message)
         case .finished:
-            finishLast(state: .complete, fallback: "No response")
+            // The route is done, so this is all the text there is; the transcript types its tail
+            // before the reply is committed as a whole.
+            flushPendingText()
+            discardPendingText()
+            isFinishing = true
         }
     }
 
@@ -299,11 +354,34 @@ final class AIChatState {
             message.searches = message.searches.map { Self.completed($0) }
             // The answer resuming is where that stretch of thinking ended.
             closeReasoning(in: &message)
+            recordArrival()
         }
         message.text += pendingText
         pendingText = ""
         session.replaceLast(with: message)
         lastFlush = ContinuousClock().now
+    }
+
+    /// What cadence the route arrives at, from a span closed across a pause. Per-flush sampling
+    /// would measure one burst as a trickle against its pause and a flood against its 40 ms
+    /// flushes, and the pour would race ahead of every burst that follows.
+    private func recordArrival() {
+        let now = ContinuousClock().now
+        guard let start = spanStart else {
+            spanStart = now
+            arrivedInSpan = pendingText.count
+            return
+        }
+        arrivedInSpan += pendingText.count
+        let gap = now - start
+        guard gap >= Self.measureSpan else { return }
+        // The closing batch is what this pace is about to pour, so it stays out of the span.
+        let seconds = Double(gap.components.seconds)
+            + Double(gap.components.attoseconds) / 1e18
+        let rate = Double(max(0, arrivedInSpan - pendingText.count)) / seconds
+        measuredPace = measuredPace.map { $0 * 0.5 + rate * 0.5 } ?? rate
+        spanStart = now
+        arrivedInSpan = pendingText.count
     }
 
     private func discardPendingText() {
@@ -313,9 +391,32 @@ final class AIChatState {
         pendingReasoning = ""
     }
 
-    private func finishLast(state: ChatMessage.State, fallback: String) {
+    /// Hands the reply's unseen characters to the transcript, and once the route is done and the
+    /// tail is typed out, commits the reply.
+    private func advanceReveal(from stamp: ContinuousClock.Instant, to now: ContinuousClock.Instant) {
+        guard let message = session.messages.last, message.role == .assistant,
+            message.state == .streaming
+        else { return }
+        let revealed = min(max(revealCount, 0), message.text.count)
+        let fraction = revealPolicy.gain(
+            from: revealed, toward: message.text.count, over: now - stamp,
+            pace: measuredPace, draining: isFinishing)
+        let owe = fraction + revealCarry
+        let left = message.text.count - revealed
+        let step = min(left, Int(owe))
+        if step > 0 { revealCount = revealed + step }
+        revealCarry = step >= left ? 0 : owe - Double(step)
+        if isFinishing, revealed >= message.text.count {
+            finalizeReply(state: .complete, fallback: "No response")
+        }
+    }
+
+    private func finalizeReply(state: ChatMessage.State, fallback: String) {
         flushPendingText()
         discardPendingText()
+        revealTask?.cancel()
+        revealTask = nil
+        isFinishing = false
         guard var message = session.messages.last, message.role == .assistant else { return }
         if state == .failed, !message.text.isEmpty {
             message.text += "\n\n\(fallback)"
@@ -327,6 +428,7 @@ final class AIChatState {
         message.searches = message.searches.map { Self.completed($0) }
         // A call still running when the turn ends never reported back, whatever ended the turn.
         message.toolUses = message.toolUses.map { Self.settled($0) }
+        revealCount = message.text.count
         session.replaceLast(with: message)
         history.save(session)
         isStreaming = false

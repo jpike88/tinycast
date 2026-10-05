@@ -135,7 +135,7 @@ struct ChatHistoryPreview: View {
         Group {
             if conversationID == chat.session.id, !chat.session.messages.isEmpty {
                 ChatTranscriptView(
-                    messages: chat.session.messages, status: chat.liveStatus, usage: chat.usage,
+                    messages: chat.displayMessages, status: chat.liveStatus, usage: chat.usage,
                     surface: .palette)
             } else if let session {
                 ChatTranscriptView(

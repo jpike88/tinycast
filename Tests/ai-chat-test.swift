@@ -58,6 +58,13 @@ struct AIChatTests {
         await aConversationIsLiveOnOneSurfaceAtATime()
         await everyStateReportsAFinishedReply()
         await reasoningFoldsIntoTheReplyAndIsNeverResent()
+        revealPolicyTypesAtOnePace()
+        await aBurstTypesOutInsteadOfLanding()
+        await aPacedReplyPoursWithoutStalls()
+        await pausesBetweenBurstsStillPour()
+        await irregularBurstsNeverSitStill()
+        await aFailedReplyShowsItsWholeTextAtOnce()
+        await stoppingTypesNothingMore()
         chatsKeepTheirOwnModel()
         choicesComeOutOfTheirFence()
         referencesAreTheLinksAReplyCites()
@@ -1399,6 +1406,268 @@ extension AIChatTests {
         expect(finished.count == 3, "a reply that failed is not one to name a chat by")
     }
 
+    /// One tick of the reveal, for the pacing sims below.
+    static let simTick = Duration.milliseconds(33)
+
+    /// The pacing policy is what makes an answer read as typing; the math gets to be shown.
+    /// `pour` mirrors what the state does: exact fractions, carried remainders, shown only whole.
+    static func revealPolicyTypesAtOnePace() {
+        let policy = AIRevealPolicy()
+
+        func pour(_ from: Int, toward target: Int, pace: Double?, draining: Bool, cap ticks: Int)
+            -> (shown: Int, ticks: Int)
+        {
+            var shown = from
+            var carry = 0.0
+            var tick = 0
+            while shown < target, tick < ticks {
+                let owe = policy.gain(
+                    from: shown, toward: target, over: Self.simTick, pace: pace, draining: draining)
+                    + carry
+                let step = min(target - shown, Int(owe))
+                shown += step
+                carry = step >= target - from ? 0 : owe - Double(step)
+                tick += 1
+            }
+            return (shown, tick)
+        }
+
+        // Before any cadence is known, the first shape starts at a reading pace and closes gently.
+        let opener = pour(0, toward: 80, pace: nil, draining: false, cap: 600)
+        expect(opener.shown == 80, "the first shape lands exactly on the reply")
+        expect(
+            opener.ticks > 20, "the first taste opens at reading speed, not a paste, took \(opener.ticks)")
+        expect(opener.ticks < 90, "and it is not absurdly slow either, took \(opener.ticks)")
+
+        // Once a cadence is known, the pour follows the arrivals instead of surging and pausing.
+        var shown = 0.0
+        var carry = 0.0
+        var arrived = 0
+        var ticks = 0
+        for _ in 0..<10 {
+            arrived += 150
+            for _ in 0..<12 {
+                let owe = policy.gain(
+                    from: Int(shown), toward: arrived, over: Self.simTick, pace: 375,
+                    draining: false) + carry
+                let step = min(arrived - Int(shown), Int(owe))
+                shown += Double(step)
+                carry = step >= arrived - Int(shown) ? 0 : owe - Double(step)
+                ticks += 1
+            }
+        }
+        while Int(shown) < arrived, ticks < 300 {
+            let owe = policy.gain(
+                from: Int(shown), toward: arrived, over: Self.simTick, pace: 375, draining: false)
+                + carry
+            let step = min(arrived - Int(shown), Int(owe))
+            shown += Double(step)
+            carry = step >= arrived - Int(shown) ? 0 : owe - Double(step)
+            ticks += 1
+        }
+        expect(Int(shown) == arrived, "the measured pour lands on the whole reply exactly")
+        let poured = shown / (Double(ticks) * 0.033)
+        expect(
+            poured > 240 && poured < 480,
+            "the bulk pours at the arrival cadence of 375 a second, averaged \(poured),")
+
+        // A measured trickle cannot park the reveal: the floor is the lowest the bulk ever runs.
+        let trickle = pour(0, toward: 40, pace: 5, draining: false, cap: 600)
+        expect(
+            trickle.ticks < 90,
+            "a trickle-paced reply still reveals at reading speed, took \(trickle.ticks)")
+
+        // The reveal edge never touches the arrived text while the reply streams: the last few
+        // letters crawl, so the gap after them reads as tapering typing, not a halt.
+        var drip = policy.gain(
+            from: 990, toward: 1_000, over: Self.simTick, pace: 300, draining: false)
+        expect(drip > 0.4 && drip < 0.6, "the last letters drip, \(drip) to the step")
+        let bulk = policy.gain(
+            from: 900, toward: 1_000, over: Self.simTick, pace: 300, draining: false)
+        expect(bulk > 9 && bulk < 11, "while the bulk of the same reply keeps the pace, \(bulk)")
+        let crawl = pour(0, toward: 40, pace: 300, draining: false, cap: 600)
+        // Three bulk steps for the first twenty, then the trail drips at fifteen a second.
+        expect(
+            crawl.ticks > 15,
+            "a reply caught up with its route still types slowly ahead of a pause, \(crawl.ticks)")
+
+        // A wall delivered at once pours no faster than the ceiling.
+        let wall = policy.gain(
+            from: 0, toward: 30_000, over: Self.simTick, pace: 20_000, draining: false)
+        expect(wall < 45, "a sudden wall cannot paste itself in through one step, \(wall)")
+
+        // Once the route is done, the tail is gone within about a second, whatever size it has.
+        let tailEnd = pour(0, toward: 600, pace: nil, draining: true, cap: 400)
+        expect(
+            tailEnd.ticks < 30,
+            "the tail of a finished reply is gone within a second, took \(tailEnd.ticks)")
+
+        expect(
+            policy.gain(from: 10, toward: 10, over: Self.simTick, pace: 300, draining: true) == 0,
+            "nothing unseen, nothing handed")
+        expect(
+            policy.gain(from: 3, toward: 10, over: .zero, pace: 300, draining: false) == 0,
+            "no time means no characters")
+    }
+
+    /// A route delivering one huge chunk does not make the bubble jump; it types out at one pace.
+    static func aBurstTypesOutInsteadOfLanding() async {
+        let (store, directory) = temporaryStore("reveal")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let chat = AIChatState(history: store)
+        let burst = String(repeating: "a", count: 3_000)
+        chat.send("Big", using: ScriptedProvider(rounds: [[.text(burst), .finished]]))
+
+        try? await Task.sleep(for: .milliseconds(120))
+        expect(chat.isStreaming, "a burst the route sent at once is still being typed out")
+        let first = chat.displayMessages.last?.text.count ?? 0
+        expect(first > 0, "the bubble has begun to type at once")
+        expect(first < 3_000, "the bubble holds part of the reply, not all of it yet")
+        expect(
+            chat.session.messages.last?.text == burst,
+            "the reply itself already holds the whole text while the display catches up")
+
+        try? await Task.sleep(for: .milliseconds(250))
+        let second = chat.displayMessages.last?.text.count ?? 0
+        expect(second > first, "the reveal moves between frames, \(first) then \(second)")
+
+        for _ in 0..<400 where chat.isStreaming {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        expect(!chat.isStreaming, "the typed-out reply ends")
+        expect(chat.displayMessages == chat.session.messages, "a finished reply is not held back")
+        expect(chat.lastAssistantText == burst, "the whole text is what the chat keeps")
+        expect(
+            ChatHistoryStore(directory: directory).session(id: chat.session.id)?.messages.last?.text
+                == burst, "and what the store saves")
+    }
+
+    /// Arrivals on an even clock pour the same way: no surge while a chunk's text is still typing,
+    /// no pause once it is done.
+    static func aPacedReplyPoursWithoutStalls() async {
+        let (store, directory) = temporaryStore("reveal-pace")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let chat = AIChatState(history: store)
+        // Twelve 60-character chunks on a 140 ms clock: an arrival pace of about 430 a second.
+        chat.send(
+            "Paced",
+            using: PacedProvider(chunks: 12, size: 60, interval: .milliseconds(140)))
+
+        var previous = 0
+        var stalls = 0
+        var samples = 0
+        let start = ContinuousClock().now
+        while chat.isStreaming, ContinuousClock().now - start < .seconds(8) {
+            try? await Task.sleep(for: .milliseconds(60))
+            let shown = chat.displayMessages.last?.text.count ?? 0
+            if samples > 3, shown == previous { stalls += 1 }
+            previous = max(previous, shown)
+            samples += 1
+        }
+        expect(!chat.isStreaming, "the paced reply ends")
+        expect(previous == 720, "every chunk is revealed, saw \(previous)")
+        expect(
+            stalls < 5,
+            "the pour does not surge and pause between chunks, \(stalls) static frames in \(samples)")
+    }
+
+    /// The reported rhythm: a chunk lands, pours, and sits still until the next one. When the
+    /// route arrives like that, the pour has to span the pause instead of racing each chunk.
+    static func pausesBetweenBurstsStillPour() async {
+        let (store, directory) = temporaryStore("reveal-pauses")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let chat = AIChatState(history: store)
+        // Five 200-character chunks a second apart: an arrival pace of about 200 a second.
+        chat.send(
+            "Chunky",
+            using: PacedProvider(chunks: 5, size: 200, interval: .seconds(1)))
+
+        var previous = 0
+        var stalls = 0
+        var samples = 0
+        let start = ContinuousClock().now
+        while chat.isStreaming, ContinuousClock().now - start < .seconds(12) {
+            try? await Task.sleep(for: .milliseconds(80))
+            let shown = chat.displayMessages.last?.text.count ?? 0
+            // The opener pours before any span has measured a cadence; the pauses themselves
+            // are what the measured pour has to span, so they are what counts stillness.
+            if samples > 25, shown == previous { stalls += 1 }
+            previous = max(previous, shown)
+            samples += 1
+        }
+        expect(!chat.isStreaming, "the chunky reply ends")
+        expect(previous == 1_000, "every chunk is revealed, saw \(previous)")
+        expect(
+            stalls <= 1,
+            "a second of stillness must not sit between bursts, \(stalls) static frames")
+    }
+
+    /// A real route does not repeat itself: bursts of different sizes on irregular gaps. A small
+    /// burst after a big one used to pour in a blink and sit still for the rest of its gap —
+    /// settled pace can't see it coming, so the trailing few characters have to cover for it.
+    static func irregularBurstsNeverSitStill() async {
+        let (store, directory) = temporaryStore("reveal-irregular")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let chat = AIChatState(history: store)
+        chat.send(
+            "Bumpy",
+            using: PacedProvider(
+                sizes: [300, 60, 240, 60],
+                pauses: [.seconds(1), .seconds(1), .seconds(1), .seconds(1)]))
+
+        var previous = 0
+        var still = 0
+        var worst = 0
+        let start = ContinuousClock().now
+        while chat.isStreaming, ContinuousClock().now - start < .seconds(10) {
+            try? await Task.sleep(for: .milliseconds(80))
+            let shownCount = chat.displayMessages.last?.text.count ?? 0
+            // Before the first chunk lands there is nothing to type, so stillness starts counting
+            // only once the reply has begun to appear.
+            if previous > 0 {
+                if shownCount == previous { still += 1; worst = max(worst, still) } else { still = 0 }
+            }
+            previous = max(previous, shownCount)
+        }
+        expect(!chat.isStreaming, "the bumpy reply ends")
+        expect(previous == 660, "every burst is revealed, saw \(previous)")
+        expect(
+            worst <= 3,
+            "an irregular small burst must taper, never halt: \(worst) static frames in a row")
+    }
+
+    static func aFailedReplyShowsItsWholeTextAtOnce() async {
+        let (store, directory) = temporaryStore("reveal-fail")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let chat = AIChatState(history: store)
+        chat.send("Why?", using: ScriptedProvider(rounds: [[.text("Half")]]))
+        await settle(chat)
+        expect(!chat.isStreaming, "the reply ended")
+        expect(
+            chat.displayMessages == chat.session.messages,
+            "a failed reply is shown whole at once, not typed out")
+        expect(
+            chat.lastAssistantText == "Half\n\nThe response ended unexpectedly.",
+            "the failure note lands beside the partial text")
+    }
+
+    /// Stop is the reader calling time: whatever is shown is already the whole reply.
+    static func stoppingTypesNothingMore() async {
+        let (store, directory) = temporaryStore("reveal-stop")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let chat = AIChatState(history: store)
+        chat.send(
+            "Big",
+            using: ScriptedProvider(rounds: [[.text(String(repeating: "b", count: 3_000)), .finished]]))
+        try? await Task.sleep(for: .milliseconds(150))
+        expect(chat.isStreaming, "still typing out when Stop lands")
+        chat.cancel()
+        expect(!chat.isStreaming, "stop ends the reply at once")
+        expect(
+            chat.displayMessages == chat.session.messages, "nothing keeps draining past Stop")
+        expect(chat.lastAssistantText?.hasSuffix("Cancelled") == true, "stop stamps what it stopped")
+    }
+
     /// Two surfaces editing one transcript would each save over the other.
     static func aConversationIsLiveOnOneSurfaceAtATime() async {
         let (store, directory) = temporaryStore("surfaces")
@@ -1724,6 +1993,37 @@ final class ScriptedProvider: AIProvider, @unchecked Sendable {
         return AIProviderStream { continuation in
             for event in events { continuation.yield(event) }
             continuation.finish()
+        }
+    }
+}
+
+/// A route that paces its text the way a real one reads: equal chunks on an even clock, or any
+/// shape of sizes and pauses a test needs to stand in for a route's own rhythm.
+final class PacedProvider: AIProvider, @unchecked Sendable {
+    private let chunks: [String]
+    private let pauses: [Duration]
+
+    init(chunks: Int, size: Int, interval: Duration) {
+        self.chunks = Array(repeating: String(repeating: "x", count: size), count: chunks)
+        self.pauses = Array(repeating: interval, count: chunks)
+    }
+
+    init(sizes: [Int], pauses: [Duration]) {
+        self.chunks = sizes.map { String(repeating: "x", count: $0) }
+        self.pauses = pauses
+    }
+
+    func stream(_ request: AIRequest) -> AIProviderStream {
+        AIProviderStream { continuation in
+            let task = Task.detached {
+                for (chunk, pause) in zip(self.chunks, self.pauses) {
+                    try? await Task.sleep(for: pause)
+                    continuation.yield(.text(chunk))
+                }
+                continuation.yield(.finished)
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }

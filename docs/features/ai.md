@@ -492,6 +492,21 @@ Assistant replies render Markdown and LaTeX math; user messages remain literal. 
 palette is hidden, the window is closed or showing another chat — the state is `AppCore`'s, not the
 view's — and is saved when it finishes.
 
+Routes speak in bursts, so the reply does not appear as they send it: deltas keep arriving into the
+reply's whole text through the usual buffers, while a reveal hands the transcript a growing prefix of
+it on a ticker of its own. The reveal pours at the cadence the route has been arriving at, measured
+over arrival spans long enough to cover one pause plus the burst that opened it, so the split flushes
+inside a single burst cannot fake a surge or a stall; the pace is floored at a fast reading speed so a
+trickle never crawls and capped so a wall a route sent at once cannot paste itself in. The last few
+characters from the reveal edge drip slower than everything ahead of them, so a pause the pacing could
+not see coming reads as tapering typing rather than a halt. Only the reply's opening, before any span
+has measured a cadence, closes a gap term on top of the pour; once the route is done its tail drains
+quickly.
+What surfaces show is `displayMessages`; what
+everything else reads — offsets, persistence, naming, copy — is still the reply itself, so a search
+or tool call is pinned where it happened even while the reader has not been told that far yet. A
+failed reply, a Stop, and a parked chat's return to a surface snap whole instead of typing.
+
 Tool activity persists in `message_tools` beside `message_searches`, and `ChatMessage.segments`
 interleaves the two by text offset so a reply renders what it did in the order it did it. Offsets tie
 whenever no text arrived between two of them, so each search and call also takes a `sequence` — its
