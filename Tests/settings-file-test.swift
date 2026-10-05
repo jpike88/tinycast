@@ -46,7 +46,7 @@ struct SettingsFileTest {
             "sections follow the Settings sidebar",
             SettingsFileKey.sections == [
                 "general", "appearance", "hyperKey", "calculator", "search", "applications",
-                "commands", "quicklinks", "appleShortcuts", "ai", "quickActions", "fileSearch",
+                "commands", "quicklinks", "appleShortcuts", "ai", "quickActions", "dictation", "fileSearch",
                 "notes", "snippets", "navigation", "windowManagement", "clipboard", "emoji",
                 "calendar", "extensions"
             ])
@@ -55,7 +55,7 @@ struct SettingsFileTest {
         let grantPaths = [
             "snippets.enabled", "extensions.enabled", "calendar.enabled",
             "calendar.autoJoinMeetings", "calendar.cameraPreview", "quickActions.enabled",
-            "ai.mcpEnabled", "mcp.enabled", "clipboard.textSearchEnabled"
+            "ai.mcpEnabled", "mcp.enabled", "clipboard.textSearchEnabled", "dictation.enabled"
         ]
         check(
             "no capability grant has a settings.json key",
@@ -115,6 +115,7 @@ struct SettingsFileTest {
             .autoSwitchInputSource: .null,
             .searchScopes: .array(["/Applications", "~/Applications"]),
             .showInMenuBar: true,
+            .automaticallyCheckForUpdates: false,
             .escapeKeyBehavior: "say \"hi\"\\ / é\n\t\u{01}",
             .fileSearchIgnorePatterns: .array([]),
             .popToRootTimeout: 5,
@@ -124,6 +125,7 @@ struct SettingsFileTest {
             {
               "general": {
                 "showInMenuBar": true,
+                "automaticallyCheckForUpdates": false,
                 "popToRootSeconds": 5,
                 "escapeKeyBehavior": "say \\"hi\\"\\\\ / é\\n\\t\\u0001",
                 "autoSwitchInputSource": null

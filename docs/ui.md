@@ -159,6 +159,8 @@ panel, the shortcut-recorder callout and the Notes switcher, and `menuRow` is de
 `dialogIcon 32` · `hudWidth 200` ·
 `hudHeight 100` · `volumeTrackHeight 6` · `volumeReadout 38`
 
+The opt-in Dictation capsule adds `dictationPanel 144×44`, with 2pt waveform bars separated by 3pt.
+
 Notes adds `noteWindow 520×420` (opening size on a first run only), `noteWindowMinimum 320×220`,
 `noteTitlebar 44`, `noteTitleInset 120`, `noteEditorInset 16`, `noteSearchHeight 34`,
 `noteFooterHeight 28`, `noteGlyph 16`, `noteEmptyGlyph 28`, and `noteHeadingMenu 220×159`.
@@ -421,7 +423,7 @@ Source: `Theme.frosted(in:)`, `DesignSystem/PopoverMenu.swift`.
 
 Glass is normally for floating controls. The dialog root is the one modal-surface exception.
 
-- `View.frosted(in:)` = `glassEffect(.clear.interactive(), in:)` — clear, interactive lensing. Used on the action-group capsule, the menu circle and `PopoverMenu`. Dialogs intentionally use untinted, non-interactive `.glassEffect(.regular)` on their root instead; HUDs retain the panel recipe (see "Dialogs & HUD"). Retune it in `frosted(in:)`, not per call site.
+- `View.frosted(in:)` = `glassEffect(.regular.interactive(), in:)` — regular, interactive glass, so it follows the system Liquid Glass (clear ↔ tinted) setting; `.clear` ignores that setting. Used on the action-group capsule and the menu circle. Dialogs intentionally use untinted, non-interactive `.glassEffect(.regular)` on their root instead; HUDs retain the panel recipe (see "Dialogs & HUD"). Retune it in `frosted(in:)`, not per call site.
 - **Menus are in-window overlays, not system popovers.** `.contextMenu`/`NSMenu` stall clicks for seconds inside a `LazyVStack` and spill outside the panel. Use `PopoverMenu` anchored to a corner via `.overlay`, inset `menuInset` (8pt) so its own corner isn't clipped by the panel's. A menu hung off a control instead of a corner — the clipboard type filter, `.topTrailing` — insets by that control's own metrics so their edges line up.
 - **A menu's `width` is fixed, never intrinsic**, so it can't jitter as its rows change. Every header menu states its own at its `RootPaletteView.menuContent` case — `menuWidth 276`, or a token of its own where that reads too wide (`clipboardFilterMenuWidth`, `fileSearchFilterMenuWidth`, `emojiCategoryMenuWidth`) — so retuning one never moves another. Native footer menus add 30pt without changing those header widths; extension Actions owns its nearby 310pt width inside the feature.
 - **`PopoverMenu`** uses `glassEffect(.regular)` with `menuPanel 16` corners and **no hand-tuned shadow** — Tahoe glass carries its own elevation; adding a drop shadow reads heavy and non-native. A footer menu raises only its attached bottom corner to the controls' 18-point radius, so the two silhouettes meet exactly.
@@ -822,11 +824,13 @@ See [features/window-layouts.md](features/window-layouts.md#the-editor).
 
 ### The shortcut recorder callout
 
-`ShortcutRecorder` is a **120pt** field showing only the binding — a combo's modifiers collapse into
-one cap (`HotKeyBinding.compactKeycaps`), so any shortcut fits in two chips. Recording is narrated by
-`ShortcutRecorderPopover`, a small **132 × 82** callout above it: caps, one label line, an `esc` cap in
-the top-left corner. Its fixed frame shows the prompt (`⌥ A` at half opacity, "Type a
-shortcut"), live held keys, a pending second Globe tap, or a conflict (rejected caps + owner, orange).
+`ShortcutRecorder` is a **120pt** field showing only the binding. A single modifier binding puts a small
+L/R beside its glyph inside the same cap; double presses show only the two glyphs. The side follows
+the modifier identity macOS reports after remapping. Ordinary combos have no side label. Recording is
+narrated by `ShortcutRecorderPopover`, a small **132 × 82** callout above it: caps, one label line, an
+`esc` cap in the top-left corner. Its fixed frame shows the prompt (`⌥ A` at half opacity, "Type a
+shortcut"), live held keys with their reported side, a pending second modifier tap, or a conflict
+(rejected caps + owner, orange).
 
 - **An ancestor draws it.** The open recorder publishes its bounds via `ShortcutRecorderAnchorKey`;
   `.shortcutRecorderPopoverHost()` sits on `SettingsDetailView` — one host above every pane's

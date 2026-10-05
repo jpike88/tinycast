@@ -25,6 +25,9 @@ final class AppCore {
         syntheticEventTag: Paster.tinycastEventTag)
     let textInjector: TextInjector
     let hotKeys = HotKeyManager()
+    let dictationAudioDucker = DictationAudioDucker()
+    @ObservationIgnored private(set) lazy var dictationModels =
+        DictationModelStore(idleRelease: settings.dictationIdleRelease)
     let hyperKeyTap = HyperKeyTap()
     let windowMover = WindowMover()
     let spaceSwitcher = SpaceSwitcher()
@@ -87,6 +90,18 @@ final class AppCore {
         windowController: windowController, paletteCoordinator: paletteCoordinator,
         settingsCoordinator: settingsCoordinator,
         showMessage: { [unowned self] in self.showMessage($0) }, core: self)
+    @ObservationIgnored private(set) lazy var dictationCoordinator = DictationCoordinator(
+        settings: settings, hotKeys: hotKeys, models: dictationModels, injector: textInjector,
+        audioDucker: dictationAudioDucker,
+        confirmEnable: { [unowned self] in
+            await self.confirm(
+                title: "Enable Dictation?",
+                message: "Tinycast needs microphone access for dictation and Accessibility to paste into "
+                    + "other apps. Audio is processed on this Mac.",
+                symbol: "waveform", confirmTitle: "Continue", tone: .neutral,
+                confirmRole: .standard)
+        },
+        showMessage: { [unowned self] in self.showMessage($0, tone: $1) })
     @ObservationIgnored private(set) lazy var quicklinkCoordinator = QuicklinkCoordinator(
         store: quicklinks, settings: settings,
         appIndex: appIndex, injector: textInjector, hotKeys: hotKeys, favorites: favorites,
@@ -260,6 +275,7 @@ final class AppCore {
             // Shorten AppKit's ~2–3s tooltip delay; registration domain, so a user default wins.
             UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 250])
             NSApp.setActivationPolicy(.accessory)
+            dictationAudioDucker.recover()
             applyAppearance()
             observeEffectiveAppearance()
             pinnedEmoji.onPersistenceFailure = { [weak self] in
@@ -328,7 +344,7 @@ final class AppCore {
             updateChecker.onUpdateAvailable = { [weak self] release in
                 self?.updateCoordinator.presentIfAvailable(release) ?? true
             }
-            updateChecker.start()
+            updateCoordinator.applyAutomaticChecking()
             supportReminders.onDue = { [weak self] in self?.supportCoordinator.presentIfDue() }
             supportReminders.start()
 
@@ -337,6 +353,11 @@ final class AppCore {
             snippetListener.healthTicker = healthTicker
 
             hotKeys.onTogglePalette = { [weak self] in self?.paletteCoordinator.togglePalette() }
+            hotKeys.dictationEnabled = settings.dictationEnabled
+            hotKeys.dictationHoldToTalk = settings.dictationMode == .pushToTalk
+            hotKeys.onDictationPressed = { [weak self] in self?.dictationCoordinator.pressed() }
+            hotKeys.onDictationReleased = { [weak self] in self?.dictationCoordinator.released() }
+            hotKeys.onDictationCancelled = { [weak self] in self?.dictationCoordinator.cancel() }
             hotKeys.onRunCommand = { [weak self] id in self?.launcherCoordinator.runCommand(id) }
             hotKeys.onRunCustomCommand = { [weak self] id in
                 self?.customCommandCoordinator.runCustomCommand(id: id)
@@ -379,6 +400,7 @@ final class AppCore {
             hotKeys.displayName = { [weak self] action in self?.hotKeyDisplayName(for: action) }
             hotKeys.allowsAction = { [weak self] action in
                 guard let self, visibility.allowsHotKey(action) else { return false }
+                if action == .dictation { return settings.dictationEnabled }
                 // A disabled feature drops its commands from the launcher; their shortcuts go too.
                 guard case .command(let id) = action else { return true }
                 return appIndex.isCommandEnabled(id)
@@ -482,13 +504,20 @@ final class AppCore {
             return snippetsStore.record(id: id)?.snippet.name
         case .extensionCommand(let entryID):
             return appIndex.apps.first { $0.kind == .extensionCommand && $0.id == entryID }?.name
-        case .togglePalette, .command, .systemAction, .windowCommand:
+        case .togglePalette, .dictation, .command, .systemAction, .windowCommand:
             return nil
         }
     }
 
     func flushNotesForTermination() async {
         await notesCoordinator.prepareForTermination()
+    }
+
+    func stopDictationForTermination() async {
+        if settings.dictationEnabled { dictationCoordinator.prepareForTermination() }
+        dictationAudioDucker.restoreImmediately()
+        await dictationAudioDucker.waitForTransition()
+        await dictationModels.stop()
     }
 
     /// Idempotent: both switches are tracked, and either one flipping re-runs the whole decision.
@@ -518,6 +547,7 @@ final class AppCore {
     }
 
     func prepareForTermination() {
+        if settings.dictationEnabled { dictationCoordinator.prepareForTermination() }
         settingsFile?.flush()
         clipboardTextIndexer?.stop()
         // Caps Lock first: its remap is the one teardown that outlives the process.
@@ -590,6 +620,9 @@ final class AppCore {
 
     private func observeFeatureSwitches() {
         track(
+            { _ = $0.automaticallyCheckForUpdates },
+            reproject: { $0.updateCoordinator.applyAutomaticChecking() })
+        track(
             {
                 _ = $0.windowManagementEnabled
                 _ = $0.windowManagementShowInLauncher
@@ -635,6 +668,20 @@ final class AppCore {
             })
         track({ _ = $0.notesEnabled }, reproject: { $0.notesCoordinator.applyEnabled() })
         track({ _ = $0.aiEnabled }, reproject: { $0.aiChatCoordinator.applyEnabled() })
+        track(
+            { _ = $0.dictationIdleRelease },
+            reproject: {
+                $0.dictationModels.setIdleRelease($0.settings.dictationIdleRelease)
+            })
+        track(
+            {
+                _ = $0.dictationEnabled
+                _ = $0.dictationMode
+            },
+            reproject: {
+                $0.hotKeys.dictationHoldToTalk = $0.settings.dictationMode == .pushToTalk
+                $0.hotKeys.dictationEnabled = $0.settings.dictationEnabled
+            })
         track(
             {
                 _ = $0.aiEnabled

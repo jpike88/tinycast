@@ -26,8 +26,8 @@ what you touched.
 ./Scripts/run-tests.sh calc-test    # just one, while iterating
 ```
 
-The suite runs in parallel, `hw.ncpu` harnesses at a time, which is what takes it from about 140
-seconds to about 15. `TINYCAST_TEST_JOBS=1` forces it back to one at a time. Each result is numbered
+The suite runs four harnesses at a time by default to reduce CPU usage. `TINYCAST_TEST_JOBS` overrides
+that limit; `TINYCAST_TEST_JOBS=1` runs one at a time. Each result is numbered
 against the total and shows its run and compile time, a quiet stretch names the harnesses still running, and a harness that runs longer
 than `TINYCAST_TEST_TIMEOUT` seconds (default 300) is killed and reported as timed out. Parallelism is safe
 because each harness already roots its scratch state somewhere of its own — a UUID-suffixed
@@ -102,7 +102,11 @@ If a change touches anything in the right column, the harness on the left is man
 | `palette-selection-test` | `Features/PaletteRowIndex.swift` |
 | `interface-size-test` | `DesignSystem/InterfaceMetrics.swift`, `Features/Settings/InterfaceSize.swift`, `Extensions/Model/ExtensionFormMetrics.swift` |
 | `palette-placement-test` | `DesignSystem/Theme.swift`, `Palette/PalettePlacement.swift` |
-| `hotkey-test` | `HotKeys/Model/DoubleTapModifier.swift`, `DoubleTapDetector.swift`, `GlobeTapDetector.swift`, `HotKeyBinding.swift`, `HotKeySpelling.swift`, `HyperKey.swift`, `HotKeyAction.swift`, `Service/KeyShortcut.swift`, and the command→action mapping in `Launcher/Model/CommandID.swift` |
+| `hotkey-test` | `HotKeys/Model/DoubleTapModifier.swift`, `DoubleTapDetector.swift`, `ModifierKey.swift`, `ModifierKeyDetector.swift`, `HotKeyBinding.swift`, `HotKeySpelling.swift`, `HyperKey.swift`, `HotKeyAction.swift`, `Service/KeyShortcut.swift`, and the command→action mapping in `Launcher/Model/CommandID.swift` |
+| `dictation-test` | `Dictation/Model/DictationModel.swift`, `DictationTextFormatter.swift` — model paths and text formatting |
+| `dictation-volume-test` | Volume recovery across fade steps, user changes, output switching, failed writes and cancellation; injected audio controls only |
+| `dictation-inference-test` | Dictation byte BPE, Fourier/mel features and non-overlapping audio chunks; no downloaded models |
+| `dictation-worker-test` | Dictation's framed channel, worker reuse/switching, removal, cancellation and broken pipes with a fixture helper |
 | `fallback-test` | `Launcher/Model/Fallback.swift`, plus the `CommandID` and `Quicklink` ids it is built from |
 | `dictionary-test` | `Dictionary/Model/DictionaryEntry.swift`, `DictionaryMarkup.swift` — a real XHTML record and the plain-text fallback, read into page blocks |
 | `callout-test` | `DesignSystem/Theme.swift`, `HotKeys/UI/CalloutPlacement.swift` |
@@ -118,7 +122,7 @@ If a change touches anything in the right column, the harness on the left is man
 | `snippets-test` | all of `Snippets/Model/` and `Snippets/Service/`, plus `Platform/HealthTicker.swift` |
 | `notes-test` | all of `Notes/Model/` and `Notes/Service/`, including the Markdown parser, edit plans and reveal policy, plus the real fuzzy matcher and signposts |
 | `notes-editor-test` | the Notes editor, rendered and literal, with real TextKit 2 and AppKit editing objects: styling, reveal, layout fragments, keys, chords, checkboxes and links |
-| `raycast-test` | `Backup/Service/RaycastDecoder.swift`, `Scrypt.swift`, `Platform/Compression/Zlib.swift` |
+| `raycast-test` | `Backup/Service/RaycastDecoder.swift`, `Scrypt.swift`, `Platform/Compression/Zlib.swift`, `Clipboard/Model/RaycastClipboardImport.swift` and import-time clipboard retention |
 | `symbols-test` | `Extensions/Service/SymbolCatalog.swift`, against this machine's CoreGlyphs |
 | `ext-store-test` | `Extensions/Model/` — GitHub source parsing and URLs, the store and Git tree parsers |
 | `ext-refresh-test` | `Extensions/Model/ExtensionRefreshPolicy.swift` — interval parsing, due dates, backoff, subtitle fallback, indicator state |
@@ -134,6 +138,7 @@ If a change touches anything in the right column, the harness on the left is man
 | `window-file-test` | `WindowManagement/Model/WindowManagementFileFormat.swift` — command shortcuts, custom sizes, layouts and rooms as settings.json spells them, hand edits and bad records |
 | `backup-archive-test` | all of `Backup/Model/`, plus `Backup/Service/BackupStaging.swift` |
 | `updates-test` | `Updates/Model/` — version precedence, channel filtering, install route, readiness |
+| `update-check-test` | `UpdateCheckStore` — stopping, in-flight cancellation, cached prompt suppression, restart and independent manual checking |
 | `support-test` | `Support/Model/` — when the support reminder comes due, and a clock moved backwards |
 | `mcp-test` | `MCP/Model/` and `MCPSettingsStore` — JSON-RPC framing, handles, tool names, output flattening, trust, `@server` addressing, the shape a vendor CLI is handed, and which servers Tinycast leaves to that CLI |
 | `mcp-stdio-test` | `MCP/Service/` against a stub server — handshake, listing, calling, and every way one can go away |
@@ -301,6 +306,11 @@ swiftc -O -swift-version 6 Tinycast/Platform/{Signposts,Appearance,NotificationT
 `Signposts.interval` owns an explicit `defer` around the wrapped work on purpose. The obvious spelling
 leaks the interval when the work throws, because the `.end` emit is skipped on the throw path and the
 instrument then shows an interval that never closes.
+
+`./Scripts/benchmark-dictation.sh AUDIO` measures all four installed dictation models with fresh and
+reused helpers, reporting load time, transcription time, sampled helper footprint and recognized text.
+It uses only the supplied audio and already downloaded models, outside the app and deterministic suite.
+See [Dictation validation](features/dictation.md#validation) for comparison limits and optional arguments.
 
 Measure before optimising, and measure the same way twice. For cold launch: quit fully, relaunch, time
 it three times, take the median.
@@ -536,6 +546,9 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
   flipping it back re-renders without dirtying the note or touching undo
 - Edit one note, switch to a shorter note, then Undo and Redo: the new note remains intact and the app
   does not terminate
+- With rendering on and off, ⌘Z undoes and ⇧⌘Z redoes typing, deletion and paste while another app's
+  menu bar is visible; both update the footer and autosave the restored source. Editing after undo
+  discards redo; reopening a note after switching away starts with no history
 - Marked-text input, emoji, combining marks, Copy, Cut, Paste, Select All, Undo, and Redo preserve
   exact source; ⌘F finds occurrences in the active note with rendering on and off, and Escape closes
   the find bar before hiding Notes
@@ -612,6 +625,8 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
   still finds the command, and it still lists the meetings
 - Adding or deleting an event in Calendar.app updates an open palette without a reopen
 - A meeting with no link is listed and searchable, and answers Open in Calendar rather than Join
+- Two upcoming meetings with titles in reverse alphabetical order appear earliest first in the
+  launcher's Meetings section and the `Meetings` category listing, even after opening the later one
 - Import a backup taken with Calendar on: it comes back **off**, and no calendar toggle travels
 - Calendar in Menu Bar on Disabled: the calendar item is gone and Tinycast's own item is unaffected;
   turning `Show in menu bar` off leaves an enabled calendar item in place, and both off leaves neither
@@ -674,6 +689,10 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 
 ### Settings and backup
 
+- General → Automatically check for updates defaults on; turn it off and relaunch: it stays off,
+  no background check or update prompt occurs, and Check for Updates still works. Re-enable it:
+  checks resume. Settings search for "updates" reveals the toggle; settings.json edits and a backup
+  round trip preserve the choice.
 - Every pane renders and the sidebar switches without flicker
 - A feature switch takes effect in the launcher immediately; every setting survives relaunch
 - Export produces a `.tinycast`; import applies it and reports a per-category summary
