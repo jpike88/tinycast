@@ -626,6 +626,12 @@ final class AIChatCoordinator {
         let budget = contextBudget(for: chat)
         let can = capabilities(for: chat)
         let scope = chat.toolScope
+        // A route's own report of the window outranks the catalog's; the card cites either.
+        let catalogWindow: Int? = switch model(for: chat) {
+        case .api(let connection, let model, _)?:
+            core.aiSettings.connection(id: connection)?.contextLength(for: model)
+        default: nil
+        }
         return ChatContextReport(
             modelTitle: detailed ? selectedModelTitle(for: chat) : "",
             historyBytes: session.historyBytes, budget: budget,
@@ -634,6 +640,9 @@ final class AIChatCoordinator {
             stagedFiles: chat.pendingAttachments.count,
             stagedBytes: chat.pendingAttachments.reduce(0) { $0 + $1.payload.byteCount },
             usage: chat.usage,
+            sessionInput: session.sessionInputTokens,
+            sessionOutput: session.sessionOutputTokens,
+            modelWindow: session.sessionWindow ?? catalogWindow,
             systemPrompt: core.aiSettings.systemPromptEnabled,
             webSearch: searchIsReachable(in: chat),
             toolServers: can.tools && scope.isEnabled
@@ -922,20 +931,23 @@ struct ChatContextReport: Equatable {
     let stagedFiles: Int
     let stagedBytes: Int
     let usage: AIUsage?
+    let sessionInput: Int?
+    let sessionOutput: Int?
+    let modelWindow: Int?
     let systemPrompt: Bool
     let webSearch: Bool
     let toolServers: Int
 
-    /// The model's own window when the route reported one; otherwise Tinycast's history budget.
+    /// The model's own window when the route reports one, else the catalog's; Tinycast's byte
+    /// budget only bounds history, so it is the fallback the meter reads where neither is known.
+    var reportedWindow: Int? {
+        usage?.contextWindow ?? modelWindow
+    }
+
     var fill: Double {
-        if let tokens = usage?.contextTokens, let window = usage?.contextWindow, window > 0 {
+        if let tokens = usage?.contextTokens, let window = reportedWindow, window > 0 {
             return Double(tokens) / Double(window)
         }
         return Double(historyBytes) / Double(max(budget, 1))
-    }
-
-    var accessibilitySummary: String {
-        let percent = fill.formatted(.percent.precision(.fractionLength(0)))
-        return "Context \(percent), \(sentMessages) of \(totalMessages) messages sent"
     }
 }

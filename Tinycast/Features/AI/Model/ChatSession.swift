@@ -79,6 +79,32 @@ struct ChatSession: Equatable, Sendable {
         return head.count + 1 + tail.count
     }
 
+    /// The whole session's reported prompt — sent and cached alike — nil until some reply said one.
+    var sessionInputTokens: Int? {
+        let reported = messages.compactMap { message -> Int? in
+            guard let usage = message.usage else { return nil }
+            // A zero is not a count here either, wherever one slipped into the stored facts.
+            guard (usage.inputTokens ?? 0) > 0 || (usage.cachedInputTokens ?? 0) > 0
+            else { return nil }
+            return (usage.inputTokens ?? 0) + (usage.cachedInputTokens ?? 0)
+        }
+        return reported.isEmpty ? nil : reported.reduce(0, +)
+    }
+
+    /// The whole session's reported replies, nil until some reply gave an output count.
+    var sessionOutputTokens: Int? {
+        let reported = messages.compactMap { $0.usage?.outputTokens }.filter { $0 > 0 }
+        return reported.isEmpty ? nil : reported.reduce(0, +)
+    }
+
+    /// The model's window as the newest reply that reported one said it.
+    var sessionWindow: Int? {
+        for message in messages.reversed() {
+            if let window = message.usage?.contextWindow, window > 0 { return window }
+        }
+        return nil
+    }
+
     /// Older turns come back as text inside `textBudget`, so a request stops growing with the chat.
     static func boundedContext(
         _ messages: [AIMessage], textBudget: Int = Self.defaultTextBudget

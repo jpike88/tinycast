@@ -443,55 +443,73 @@ private struct WebSearchToggle: View {
     }
 }
 
-/// A ring for the share of the context in use; hovering it raises the composer's context card.
-private struct ContextGauge: View {
+/// A pair of arrow-beside-ring gauges: the last turn's input with its arrow, the reply with its own.
+struct ContextGauge: View {
     let report: ChatContextReport
     @Binding var hovered: Bool
+    @Environment(\.metrics) private var metrics
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.xs) {
-            ContextRing(fill: min(max(report.fill, 0), 1), tint: report.tint)
-            Text(report.fill.formatted(.percent.precision(.fractionLength(0))))
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+        HStack(spacing: metrics.spacing.lg) {
+            gauge("arrow.up", share: report.inputShare, label: report.inputSummary)
+            gauge("arrow.down", share: report.outputShare, label: report.outputSummary)
         }
-        .padding(.horizontal, Theme.Spacing.xs)
+        .padding(.horizontal, metrics.spacing.xs)
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
+    }
+
+    /// One direction: its arrow beside the ring, the pair reading as one gauge.
+    private func gauge(_ symbol: String, share: Double, label: String) -> some View {
+        HStack(spacing: metrics.spacing.xs) {
+            Image(systemName: symbol)
+                .font(.system(size: metrics.scaled(10), weight: .semibold))
+                .foregroundStyle(Theme.Colors.textPrimary)
+            ContextRing(fill: min(max(share, 0), 1), tint: report.tint)
+        }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(report.accessibilitySummary)
+        .accessibilityLabel(label)
     }
 }
 
-private struct ContextRing: View {
+struct ContextRing: View {
     let fill: Double
     let tint: Color
+    @Environment(\.metrics) private var metrics
 
     var body: some View {
         ZStack {
-            Circle().stroke(Theme.Colors.border, lineWidth: Theme.Size.contextRingStroke)
+            Circle().stroke(
+                Theme.Colors.border, lineWidth: metrics.scaled(Theme.Size.contextRingStroke))
             Circle()
                 .trim(from: 0, to: fill)
-                .stroke(tint, style: StrokeStyle(lineWidth: Theme.Size.contextRingStroke, lineCap: .round))
+                .stroke(
+                    tint,
+                    style: StrokeStyle(
+                        lineWidth: metrics.scaled(Theme.Size.contextRingStroke), lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
-        .frame(width: Theme.Size.chatContextGauge, height: Theme.Size.chatContextGauge)
+        .frame(
+            width: metrics.scaled(Theme.Size.chatContextGauge),
+            height: metrics.scaled(Theme.Size.chatContextGauge))
     }
 }
 
 /// Tinycast's own card, never a popover: the tokens the chat holds, then what the next turn sends.
-private struct ContextCard: View {
+struct ContextCard: View {
     let report: ChatContextReport
+    // The output meter's scale: a round figure to feel the session's spend against, not a cap.
+    private static let outputMeterScale = 16_000
+    @Environment(\.metrics) private var metrics
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.Radius.menuPanel, style: .continuous)
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+        let shape = RoundedRectangle(cornerRadius: metrics.radius.menuPanel, style: .continuous)
+        VStack(alignment: .leading, spacing: metrics.spacing.md) {
             HStack {
-                Text("Context").font(.headline)
-                Spacer(minLength: Theme.Spacing.xxl)
+                Text("Context").font(metrics.typography.panelTitle)
+                Spacer(minLength: metrics.spacing.xxl)
                 Text(report.fill.formatted(.percent.precision(.fractionLength(0))))
-                    .font(.headline)
+                    .font(metrics.typography.panelTitle)
                     .monospacedDigit()
                     .foregroundStyle(report.tint)
             }
@@ -499,18 +517,27 @@ private struct ContextCard: View {
                 .tint(report.tint)
             if report.historyBytes > report.budget {
                 Text("The oldest messages no longer fit and are left out.")
-                    .font(.caption)
+                    .font(metrics.typography.rowTrailing)
                     .foregroundStyle(Theme.Colors.destructive)
             }
             Grid(
-                alignment: .leading, horizontalSpacing: Theme.Spacing.xl,
-                verticalSpacing: Theme.Spacing.xs
+                alignment: .leading, horizontalSpacing: metrics.spacing.xl,
+                verticalSpacing: metrics.spacing.xs
             ) {
-                section("Tokens")
-                if let usage = report.usage, let context = usage.contextTokens {
-                    row("In context", tokens(context, of: usage.contextWindow))
-                    row("Input", input(usage))
-                    row("Output", output(usage))
+                section("Session total")
+                row("Input", sessionTokens(report.sessionInput, of: report.modelWindow))
+                row("Output", sessionTokens(report.sessionOutput, of: Self.outputMeterScale))
+                section("Last reply")
+                if let usage = report.usage, reportsTokens(usage) {
+                    if let context = usage.contextTokens {
+                        row("In context", tokens(context, of: usage.contextWindow ?? report.modelWindow))
+                    }
+                    if usage.inputTokens != nil {
+                        row("Input", input(usage))
+                    }
+                    if usage.outputTokens != nil {
+                        row("Output", output(usage))
+                    }
                     if let cost = usage.costUSD {
                         row(
                             "Cost",
@@ -518,7 +545,7 @@ private struct ContextCard: View {
                                 .currency(code: "USD").precision(.significantDigits(2))))
                     }
                 } else {
-                    row("Last reply", "Not reported yet")
+                    row("Usage", "Not reported yet")
                 }
                 section("Next message")
                 row("Model", report.modelTitle)
@@ -533,23 +560,23 @@ private struct ContextCard: View {
                     "MCP servers",
                     report.toolServers == 0 ? "None" : "\(report.toolServers) in reach")
             }
-            .font(.callout)
+            .font(metrics.typography.rowTrailing)
         }
-        .padding(Theme.Spacing.xl)
-        .frame(width: Theme.Size.chatContextCard, alignment: .leading)
+        .padding(metrics.spacing.xl)
+        .frame(width: metrics.scaled(Theme.Size.chatContextCard), alignment: .leading)
         .glassEffect(.regular, in: shape)
         // Solid under the glass: the card rises over the transcript, whose text must not show through.
         .background { shape.fill(Theme.Colors.windowSurface) }
-        .shadow(color: Theme.Colors.tooltipShadow, radius: Theme.Spacing.xl, y: Theme.Spacing.xs)
+        .shadow(color: Theme.Colors.tooltipShadow, radius: metrics.spacing.xl, y: metrics.spacing.xs)
     }
 
     private func section(_ title: String) -> some View {
         GridRow {
             Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
+                .font(metrics.typography.disclosure)
                 .foregroundStyle(.tertiary)
                 .gridCellColumns(2)
-                .padding(.top, Theme.Spacing.xs)
+                .padding(.top, metrics.spacing.xs)
         }
     }
 
@@ -564,9 +591,32 @@ private struct ContextCard: View {
         count.formatted(.byteCount(style: .file))
     }
 
+    /// Only the facts a reply reported become rows; a route that names no prompt says so, not 0.
+    private func reportsTokens(_ usage: AIUsage) -> Bool {
+        usage.inputTokens != nil || usage.outputTokens != nil || usage.costUSD != nil
+    }
+
     private func tokens(_ count: Int, of window: Int?) -> String {
         guard let window else { return count.formatted() }
         return "\(count.formatted()) of \(window.formatted(.number.notation(.compactName)))"
+    }
+
+    /// The meter rows: the session's spend spelled compactly beside a limit where one is known.
+    private func sessionTokens(_ count: Int?, of limit: Int? = nil) -> String {
+        guard let count else { return "Not reported yet" }
+        guard let limit else { return compactTokens(count) }
+        return "\(compactTokens(count)) / \(compactTokens(limit))"
+    }
+
+    /// 25, 271k, 900k, 1.2m — the compact spell the session's meter reads.
+    private func compactTokens(_ count: Int) -> String {
+        switch count {
+        case ..<1_000: return count.formatted()
+        case ..<1_000_000: return "\(count / 1_000)k"
+        default:
+            return (Double(count) / 1_000_000)
+                .formatted(.number.precision(.fractionLength(0...1))) + "m"
+        }
     }
 
     private func input(_ usage: AIUsage) -> String {
@@ -586,6 +636,36 @@ extension ChatContextReport {
     fileprivate var tint: Color {
         if fill >= 1 { return Theme.Colors.destructive }
         return fill >= 0.8 ? Theme.Colors.warning : Theme.Colors.textSecondary
+    }
+
+    /// The two rings' fills: the model window's share where one is known, else the turn's split.
+    fileprivate var inputShare: Double { share(of: promptCount) }
+    fileprivate var outputShare: Double { share(of: replyCount) }
+
+    /// The prompt — sent and cached alike — and the reply the route gave back.
+    fileprivate var promptCount: Int? {
+        guard let usage, usage.inputTokens != nil || usage.cachedInputTokens != nil else {
+            return nil
+        }
+        return (usage.inputTokens ?? 0) + (usage.cachedInputTokens ?? 0)
+    }
+    fileprivate var replyCount: Int? { usage?.outputTokens }
+
+    /// What VoiceOver reads at each ring; the card carries the exact rows on hover.
+    fileprivate var inputSummary: String { summary("Input", count: promptCount) }
+    fileprivate var outputSummary: String { summary("Output", count: replyCount) }
+
+    private func share(of count: Int?) -> Double {
+        guard let count, count > 0, let window = reportedWindow, window > 0 else { return 0 }
+        return Double(count) / Double(window)
+    }
+
+    private func summary(_ title: String, count: Int?) -> String {
+        guard let count else { return "\(title) not reported yet" }
+        if let window = reportedWindow, window > 0 {
+            return "\(title) \(count.formatted()) of \(window.formatted()) tokens"
+        }
+        return "\(title) \(count.formatted()) tokens"
     }
 }
 

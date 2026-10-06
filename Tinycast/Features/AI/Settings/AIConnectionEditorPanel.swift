@@ -137,6 +137,7 @@ struct AIConnectionEditorPanel: View {
                 connection.baseURL = newProvider.defaultBaseURL
             }
             connection.reasoningOptions = nil
+            connection.contextLengths = nil
             discoveryRevision += 1
         }
     }
@@ -309,6 +310,7 @@ struct AIConnectionEditorPanel: View {
         connection.models.removeAll { $0 == model }
         connection.visionModels.removeAll { $0 == model }
         connection.reasoningOptions?[model] = nil
+        connection.contextLengths?[model] = nil
     }
 
     private func discoverModels() async {
@@ -366,12 +368,12 @@ struct AIConnectionEditorPanel: View {
     private func addModel(_ model: AIModelDiscovery.Model) {
         addModel(
             model.id, acceptsImages: model.acceptsImages,
-            reasoningOptions: model.reasoningOptions)
+            reasoningOptions: model.reasoningOptions, contextLength: model.contextLength)
     }
 
     private func addModel(
         _ value: String, acceptsImages: Bool? = nil,
-        reasoningOptions: AIConnection.ReasoningOptions? = nil
+        reasoningOptions: AIConnection.ReasoningOptions? = nil, contextLength: Int? = nil
     ) {
         let model = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !model.isEmpty else { return }
@@ -384,6 +386,10 @@ struct AIConnectionEditorPanel: View {
         {
             if connection.reasoningOptions == nil { connection.reasoningOptions = [:] }
             connection.reasoningOptions?[model] = reasoningOptions
+        }
+        if let contextLength, contextLength > 0 {
+            if connection.contextLengths == nil { connection.contextLengths = [:] }
+            connection.contextLengths?[model] = contextLength
         }
         modelQuery = ""
     }

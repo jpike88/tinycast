@@ -115,6 +115,36 @@ struct AIRequest: Equatable, Sendable {
             instructions: instructions, messages: messages, maxOutputTokens: maxOutputTokens,
             webSearch: webSearch, tools: tools)
     }
+
+    /// What the turn's whole prompt reads as, roughly: Tinycast counts every piece it writes out —
+    /// the instructions, each history turn and its tool traffic, and the tool schemas — at about
+    /// four bytes a token. Images bill differently and are left out of the estimate.
+    var promptTokenEstimate: Int {
+        var bytes = instructions?.utf8.count ?? 0
+        for message in messages {
+            bytes += message.text.utf8.count
+            for call in message.toolCalls {
+                bytes += call.name.utf8.count + call.arguments.utf8.count
+            }
+            bytes += message.toolResult?.content.utf8.count ?? 0
+        }
+        for tool in tools {
+            bytes += tool.name.utf8.count + tool.description.utf8.count
+            if let object = tool.parameters.objectValue {
+                bytes += Self.jsonBytes(object)
+            }
+        }
+        return bytes / Self.bytesPerEstimatedToken
+    }
+
+    private static let bytesPerEstimatedToken = 4
+
+    private static func jsonBytes(_ value: Any) -> Int {
+        guard JSONSerialization.isValidJSONObject(value),
+            let data = try? JSONSerialization.data(withJSONObject: value)
+        else { return 0 }
+        return data.count
+    }
 }
 
 struct AIUsage: Equatable, Sendable {

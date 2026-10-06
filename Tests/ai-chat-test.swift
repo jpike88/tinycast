@@ -73,6 +73,8 @@ struct AIChatTests {
         citationsCloseTheSentenceThatCitedThem()
         toolScopeSwitchesServersPerChat()
         await usageIsKeptWithTheReplyThatReportedIt()
+        sessionTotalsSumWhatRepliesReported()
+        await usageCountsTheWholeTurnItSent()
 
         print("\(passes) passed, \(failures) failed")
         if failures > 0 { exit(1) }
@@ -476,10 +478,12 @@ struct AIChatTests {
             invoke: { call in await invoker.invoke(call) })
     }
 
-    private static func collect(_ provider: AIToolLoopProvider) async -> [AIStreamEvent] {
+    private static func collect(
+        _ provider: AIToolLoopProvider, turning turnToUse: AIRequest? = nil
+    ) async -> [AIStreamEvent] {
         var events: [AIStreamEvent] = []
         do {
-            for try await event in provider.stream(turn) { events.append(event) }
+            for try await event in provider.stream(turnToUse ?? turn) { events.append(event) }
         } catch {
             events.append(.text("ERROR: \(error.localizedDescription)"))
         }
@@ -1941,6 +1945,112 @@ extension AIChatTests {
         let reopened = AIChatState(history: ChatHistoryStore(directory: directory))
         expect(reopened.open(id: chat.session.id), "the chat reopens")
         expect(reopened.usage == reported, "a reopened chat still knows its last turn's tokens")
+    }
+
+    static func sessionTotalsSumWhatRepliesReported() {
+        var session = ChatSession(
+            messages: [
+                ChatMessage(
+                    role: .assistant, text: "one",
+                    usage: AIUsage(inputTokens: 100, outputTokens: 20, cachedInputTokens: 30)),
+                ChatMessage(role: .user, text: "again"),
+                ChatMessage(
+                    role: .assistant, text: "two",
+                    usage: AIUsage(inputTokens: 50, outputTokens: 10)),
+                ChatMessage(
+                    role: .assistant, text: "three",
+                    usage: AIUsage(outputTokens: 5, contextWindow: 968_000))
+            ])
+        expect(
+            session.sessionInputTokens == 180,
+            "session input sums each reply's prompt, its cached tokens riding along")
+        expect(session.sessionOutputTokens == 35, "session output sums every reply's answer")
+        expect(
+            session.sessionWindow == 968_000,
+            "the newest reply's window is the one the meter cites")
+
+        let untouched = ChatSession()
+        expect(
+            untouched.sessionInputTokens == nil && untouched.sessionOutputTokens == nil,
+            "a session no reply reported anything about says so, never a zero")
+
+        let outputOnly = ChatSession(
+            messages: [
+                ChatMessage(
+                    role: .assistant, text: "only", usage: AIUsage(outputTokens: 205))
+            ])
+        expect(
+            outputOnly.sessionInputTokens == nil && outputOnly.sessionOutputTokens == 205,
+            "a route that names only the answer reports only that kind")
+
+        let zeroed = ChatSession(
+            messages: [
+                ChatMessage(
+                    role: .assistant, text: "zeros",
+                    usage: AIUsage(inputTokens: 0, outputTokens: 3, cachedInputTokens: 0))
+            ])
+        expect(
+            zeroed.sessionInputTokens == nil && zeroed.sessionOutputTokens == 3,
+            "a gateway's zero prompt is not a count, so the input sum waits for a real one")
+    }
+
+    static func usageCountsTheWholeTurnItSent() async {
+        let asked = AIRequest(
+            instructions: "abcd", messages: [AIMessage(role: .user, text: "hello!!")],
+            tools: [
+                AITool(
+                    name: "bash", description: "Run", parameters: .object([:]), origin: "Bash",
+                    title: "Run")
+            ])
+        expect(
+            asked.promptTokenEstimate == 5,
+            "the estimate reads instructions, history and tool schemas at four bytes a token")
+
+        let instructions = String(repeating: "a", count: 4_000)
+        let turn = AIRequest(instructions: instructions, messages: [self.turn.messages[0]])
+        let undercounting = ScriptedProvider(
+            rounds: [[.text("Yo"), .usage(AIUsage(inputTokens: 13, outputTokens: 2)), .finished]])
+        let recorder = RecordingInvoker(result: "")
+        let events = await collect(loop(undercounting, recorder), turning: turn)
+        let usage = events.compactMap { event -> AIUsage? in
+            if case .usage(let usage) = event { return usage }
+            return nil
+        }.last
+        expect(
+            usage?.inputTokens == undercounting.requests.first?.promptTokenEstimate
+                && (usage?.inputTokens ?? 0) > 13,
+            "a route that counted only its messages yields input to the whole turn's estimate")
+        expect(usage?.outputTokens == 2, "and leaves the route's own word on everything else")
+
+        let honest = ScriptedProvider(
+            rounds: [[.text("Yo"), .usage(AIUsage(inputTokens: 1_200, outputTokens: 2)), .finished]])
+        let held = await collect(loop(honest, RecordingInvoker(result: "")), turning: turn)
+        let honestUsage = held.compactMap { event -> AIUsage? in
+            if case .usage(let usage) = event { return usage }
+            return nil
+        }.last
+        expect(
+            honestUsage?.inputTokens == 1_200,
+            "a route that counted the whole turn keeps its own, larger word")
+
+        // A round that carries the calls and their results re-sends them, and counts them in.
+        let looping = ScriptedProvider(rounds: [
+            [.toolCallRequested(AIToolCall(id: "c1", name: "fs__read", arguments: "{}"))],
+            [.text("Yo"), .usage(AIUsage(inputTokens: 13, outputTokens: 2)), .finished]
+        ])
+        let loopEvents = await collect(loop(looping, RecordingInvoker(result: "ok")), turning: turn)
+        let roundUsage = loopEvents.compactMap { event -> AIUsage? in
+            if case .usage(let usage) = event { return usage }
+            return nil
+        }.last
+        let second = looping.requests.last?.promptTokenEstimate
+        let first = looping.requests.first?.promptTokenEstimate
+        expect(
+            roundUsage?.inputTokens == second,
+            "each round's usage stands against that round's whole request")
+        expect(
+            (second ?? 0) > (first ?? 0),
+            "a round that carries tool traffic counts it in the next turn's estimate")
     }
 
     /// Replies stream on a task; a few turns of the main actor let the scripted events land.

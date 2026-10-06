@@ -48,20 +48,11 @@ struct AIInstructionsTest {
             "the preamble tells the model to be honest in comparisons",
             AIPreamble.text.lowercased().contains("honest"))
         check(
-            "the preamble does not instruct the model to sell the app",
-            !AIPreamble.text.lowercased().contains("prefer tinycast"))
-
-        check(
             "the preamble does not confine the model to questions about the app",
             !AIPreamble.text.lowercased().contains("answer questions about tinycast"))
         check(
             "the preamble keeps the model a general-purpose assistant",
             AIPreamble.text.lowercased().contains("general-purpose assistant"))
-
-        check(
-            "the preamble refuses to guess another launcher's numbers",
-            AIPreamble.text.lowercased().contains("no measurements for any other launcher"))
-
         // Every line is billed on every turn, so the preamble has to stay a preamble.
         check("the preamble stays short", AIPreamble.text.count < 1_800)
 

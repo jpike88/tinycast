@@ -65,11 +65,14 @@ struct AIConnection: Codable, Equatable, Identifiable, Sendable {
     var visionModels: [String]
     /// OpenRouter's per-model catalog metadata; absent for APIs that do not publish this contract.
     var reasoningOptions: [String: ReasoningOptions]?
+    /// Every cataloged window, in tokens; the session meter reads its spend against one.
+    var contextLengths: [String: Int]?
 
     init(
         id: UUID = UUID(), name: String = "", provider: AIProviderKind = .openAI,
         baseURL: String? = nil, models: [String] = [], visionModels: [String] = [],
-        reasoningOptions: [String: ReasoningOptions]? = nil
+        reasoningOptions: [String: ReasoningOptions]? = nil,
+        contextLengths: [String: Int]? = nil
     ) {
         self.id = id
         self.name = name
@@ -78,6 +81,7 @@ struct AIConnection: Codable, Equatable, Identifiable, Sendable {
         self.models = models
         self.visionModels = visionModels
         self.reasoningOptions = reasoningOptions
+        self.contextLengths = contextLengths
     }
 
     /// A preset pointed away from its own API is a gateway, and only a gateway takes a thinking field.
@@ -89,6 +93,11 @@ struct AIConnection: Codable, Equatable, Identifiable, Sendable {
     /// A gateway publishes no catalog, so the only effort it is known to honour is the off switch.
     func reasoningOptions(for model: String) -> ReasoningOptions? {
         reasoningOptions?[model] ?? (takesThinkingField ? .thinkingSwitch : nil)
+    }
+
+    /// The window the connection's catalog gave the model, in tokens; its absent is an unknown.
+    func contextLength(for model: String) -> Int? {
+        contextLengths?[model]
     }
 
     var title: String {

@@ -133,7 +133,7 @@ struct AIStreamDecoder: Sendable {
             if choice.finishReason == "tool_calls" { events.append(contentsOf: flushToolCalls()) }
         }
         if let reported = chunk.usage {
-            usage.inputTokens = reported.promptTokens ?? usage.inputTokens
+            usage.inputTokens = Self.nonzero(reported.promptTokens) ?? usage.inputTokens
             usage.outputTokens = reported.completionTokens ?? usage.outputTokens
             usage.reasoningTokens =
                 reported.completionTokensDetails?.reasoningTokens ?? usage.reasoningTokens
@@ -180,13 +180,18 @@ struct AIStreamDecoder: Sendable {
             return [.thinking, .reasoning(thinking)]
         case "message_start":
             let reported = event.message?.usage
-            usage.inputTokens = reported?.inputTokens ?? usage.inputTokens
+            usage.inputTokens = Self.nonzero(reported?.inputTokens) ?? usage.inputTokens
             let cached = [reported?.cacheReadInputTokens, reported?.cacheCreationInputTokens]
-                .compactMap { $0 }
+                .compactMap { $0 }.filter { $0 > 0 }
             if !cached.isEmpty { usage.cachedInputTokens = cached.reduce(0, +) }
             return [.usage(usage)]
         case "message_delta":
             usage.outputTokens = event.usage?.outputTokens ?? usage.outputTokens
+            // A gateway may give the prompt here rather than in `message_start`.
+            usage.inputTokens = Self.nonzero(event.usage?.inputTokens) ?? usage.inputTokens
+            let cached = [event.usage?.cacheReadInputTokens, event.usage?.cacheCreationInputTokens]
+                .compactMap { $0 }.filter { $0 > 0 }
+            if !cached.isEmpty { usage.cachedInputTokens = cached.reduce(0, +) }
             // The calls are complete here, and `message_stop` may never arrive on a tool turn.
             guard event.delta?.stopReason == "tool_use" else { return [.usage(usage)] }
             return [.usage(usage)] + flushToolCalls()
@@ -207,6 +212,11 @@ struct AIStreamDecoder: Sendable {
         case "rate_limit_error": return "Rate limit reached — try again later."
         default: return "The provider stopped the response with an error."
         }
+    }
+
+    /// A gateway reports a count it does not know as 0, so 0 reads as unknown, never as a count.
+    private static func nonzero(_ value: Int?) -> Int? {
+        value.flatMap { $0 > 0 ? $0 : nil }
     }
 }
 

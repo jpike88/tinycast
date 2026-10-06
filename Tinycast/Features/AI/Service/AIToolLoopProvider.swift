@@ -80,12 +80,20 @@ struct AIToolLoopProvider: AIProvider {
     ) async throws -> (text: String, calls: [AIToolCall]) {
         var text = ""
         var calls: [AIToolCall] = []
+        let estimate = request.promptTokenEstimate
         for try await event in base.stream(request) {
             try Task.checkCancellation()
             switch event {
             case .text(let delta):
                 text += delta
                 continuation.yield(event)
+            case .usage(let reported):
+                // What went out was the whole turn — instructions, tools, every history turn — and
+                // some gateways count only part of it. A count that misses the prompt yields to
+                // the request's estimate; a route that reported more keeps its own word.
+                var counted = reported
+                if estimate > (counted.inputTokens ?? 0) { counted.inputTokens = estimate }
+                continuation.yield(.usage(counted))
             case .toolCallRequested(let call):
                 calls.append(call)
             // `.finished` is the loop's to send, once the model has stopped asking for tools.

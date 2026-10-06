@@ -137,7 +137,7 @@ enum InstalledAIStreamDecoder {
     /// Cached prompt tokens sit outside `input_tokens`, and only `modelUsage` names the window.
     private static func claudeUsage(_ usage: [String: Any], result: [String: Any]) -> AIUsage {
         let cached = [usage["cache_read_input_tokens"], usage["cache_creation_input_tokens"]]
-            .compactMap(integer)
+            .compactMap(integer).filter { $0 > 0 }
         let details = usage["output_tokens_details"] as? [String: Any]
         // A side model (Haiku) may share the turn; the conversation's read the largest prompt.
         let model = (result["modelUsage"] as? [String: Any])?.values

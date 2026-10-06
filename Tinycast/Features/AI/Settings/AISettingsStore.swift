@@ -495,6 +495,10 @@ final class AISettingsStore {
             seen.contains($0.key) && !$0.value.efforts.isEmpty
         }
         if connection.reasoningOptions?.isEmpty == true { connection.reasoningOptions = nil }
+        connection.contextLengths = connection.contextLengths?.filter {
+            seen.contains($0.key) && $0.value > 0
+        }
+        if connection.contextLengths?.isEmpty == true { connection.contextLengths = nil }
         return connection
     }
 

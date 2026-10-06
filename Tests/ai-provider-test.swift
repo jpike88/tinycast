@@ -86,6 +86,7 @@ struct AIProviderTests {
         savingAConnectionDecidesItsKey()
         sseFramesSurviveSplits()
         openAIAndAnthropicStreamsDecode()
+        gatewayZeroCountsReadAsUnknown()
         capturedStreamsDecodeHoweverTheyArrive()
         thinkTagStreamsDecodeHoweverTheyArrive()
         brokenStreamsFailLoudly()
@@ -471,6 +472,31 @@ struct AIProviderTests {
             openAIModels?.last?.reasoningOptions?.resolvedEffort(nil) == "medium",
             "OpenRouter reasoning metadata keeps the model's advertised default")
 
+        // A cataloged window survives deduction into the connection, so the meter can cite it.
+        let inco = Data(
+            """
+            {"data":[
+                {"id":"glm-5.3-flash","name":"GLM 5.3 Flash","context_length":1048576},
+                {"id":"mystery","name":"Mystery"},
+                {"id":"degenerate","name":"Degenerate","context_length":0}
+            ]}
+            """.utf8)
+        let incoModels = try? AIModelDiscovery.decode(inco, shape: .openAI)
+        expect(
+            incoModels?.map(\.contextLength) == [1_048_576, nil, nil],
+            "a catalog's context_length is the model's window, and a zero is no window at all")
+        var connection = AIConnection(provider: .openAI, models: ["glm-5.3-flash", "mystery"])
+        for model in incoModels ?? [] {
+            if let contextLength = model.contextLength {
+                if connection.contextLengths == nil { connection.contextLengths = [:] }
+                connection.contextLengths?[model.id] = contextLength
+            }
+        }
+        expect(
+            connection.contextLength(for: "glm-5.3-flash") == 1_048_576
+                && connection.contextLength(for: "mystery") == nil,
+            "the connection answers the window where the catalog gave one and unknown elsewhere")
+
         let router = AIConnection(
             provider: .openRouter, models: ["model-a", "model-b"], visionModels: ["model-b"])
         expect(
@@ -677,6 +703,38 @@ struct AIProviderTests {
             anthropicEvents.contains(.usage(AIUsage(inputTokens: 4, outputTokens: 1))),
             "Anthropic usage accumulates across events")
         expect(anthropicEvents.last == .finished, "Anthropic message_stop terminates the stream")
+    }
+
+    /// Inco's Anthropic-shaped gateway reports the prompt as 0 and the cache as 0 in `message_start`.
+    static func gatewayZeroCountsReadAsUnknown() {
+        func decoded(_ data: String, shape: AIHTTPConfiguration.APIShape) -> [AIStreamEvent] {
+            var decoder = AIStreamDecoder(shape: shape)
+            let events = (try? decoder.feed(Data(data.utf8))) ?? []
+            return events + ((try? decoder.finish()) ?? [])
+        }
+        let zeros = decoded(
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":0,"
+                + "\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n\n"
+            + "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":61}}\n\n"
+            + "data: {\"type\":\"message_stop\"}\n\n", shape: .anthropic)
+        expect(
+            zeros.contains(.usage(AIUsage(outputTokens: 61))),
+            "gateway zeros are not counts: only the output the route really gave arrives")
+
+        let adopted = decoded(
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":0}}}\n\n"
+            + "data: {\"type\":\"message_delta\",\"usage\":{\"input_tokens\":7,\"output_tokens\":3}}\n\n"
+            + "data: {\"type\":\"message_stop\"}\n\n", shape: .anthropic)
+        expect(
+            adopted.contains(.usage(AIUsage(inputTokens: 7, outputTokens: 3))),
+            "a prompt reported on `message_delta` covers the zero `message_start` named")
+
+        let openAIZero = decoded(
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":0,\"completion_tokens\":9}}\n\n"
+            + "data: [DONE]\n\n", shape: .openAICompatible)
+        expect(
+            openAIZero.contains(.usage(AIUsage(outputTokens: 9))),
+            "an OpenAI-shaped zero prompt reads as unknown like any gateway's")
     }
 
     /// Real OpenRouter captures, with the reasoning ones proving thought never leaks into text.

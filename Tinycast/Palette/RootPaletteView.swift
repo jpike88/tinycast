@@ -42,6 +42,8 @@ struct RootPaletteView: View {
     @State private var hostWindow: NSWindow?
     /// The pending scroll request; modes are exclusive, so one piece of state serves all.
     @State private var scroll = ScrollIntent(kind: .top)
+    /// The Quick AI card the gauge raises; a hidden window delivers no mouse exit.
+    @State private var showsContext = false
 
     /// Compact vs. full; the source of truth is on `AppCore`, so the two can't disagree.
     private var isCollapsed: Bool { core.paletteCoordinator.paletteIsCollapsed }
@@ -289,6 +291,21 @@ struct RootPaletteView: View {
                         screen.body(selection: sel, scroll: scroll)
                     }
                 }
+                // The transcript's own bottom edge, so the card sits over it and above the bar.
+                .overlay(alignment: .bottom) {
+                    if showsContext, vm.mode == .ai, !isCollapsed {
+                        HStack {
+                            Spacer(minLength: 0)
+                            QuickAIContextCard(
+                                chatCoordinator: core.aiChatCoordinator, chat: quickAI)
+                        }
+                        .padding(.horizontal, metrics.spacing.md)
+                        .padding(.bottom, metrics.spacing.sm)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                    }
+                }
+                .animation(.easeOut(duration: Theme.Duration.tooltip), value: showsContext)
                 .safeAreaInset(edge: .top, spacing: 0) { header }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if !isCollapsed {
@@ -403,6 +420,7 @@ struct RootPaletteView: View {
                 vm.emojiCategoryFilter = .all
                 vm.emojiGridColumnsOverride = nil
                 vm.fileSearchQuickLook = false
+                showsContext = false
                 if menuOpen { closeMenus() }
                 land()
                 searchFocused = !screen.hidesSearchField
@@ -432,6 +450,10 @@ struct RootPaletteView: View {
             .onChange(of: vm.resetToken) {
                 if menuOpen { closeMenus() }
                 land()
+            }
+            // Ordering out keeps the tree mounted, so a hidden window never fires the gauge's exit.
+            .onChange(of: vm.isVisible) {
+                if !vm.isVisible { showsContext = false }
             }
             // ⌘. arrives as a token rather than a key press. See `PaletteState.pinChordToken`.
             .onChange(of: vm.pinChordToken) { performShortcut(.pin) }
@@ -884,6 +906,11 @@ struct RootPaletteView: View {
         HStack(spacing: 0) {
             appMenuButton
                 .modifier(ExtensionToastSlot(extensions: extensions, showing: vm.mode == .extensionCommand))
+            if vm.mode == .ai {
+                QuickAIContextGauge(
+                    chatCoordinator: core.aiChatCoordinator, chat: quickAI, hovered: $showsContext)
+                    .padding(.trailing, metrics.spacing.md)
+            }
             if showActionGroup {
                 actionGroup(
                     pillLabel: pillLabel, formPrimaryShortcut: formPrimaryShortcut,

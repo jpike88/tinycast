@@ -177,6 +177,28 @@ private struct AIChatView: View {
     }
 }
 
+/// The gauge beside the footer group; its report is built here, so only it redraws per flush.
+struct QuickAIContextGauge: View {
+    let chatCoordinator: AIChatCoordinator
+    let chat: AIChatState
+    @Binding var hovered: Bool
+
+    var body: some View {
+        ContextGauge(
+            report: chatCoordinator.contextReport(for: chat, detailed: false), hovered: $hovered)
+    }
+}
+
+/// The card the gauge raises; its report is built here for the same reason.
+struct QuickAIContextCard: View {
+    let chatCoordinator: AIChatCoordinator
+    let chat: AIChatState
+
+    var body: some View {
+        ContextCard(report: chatCoordinator.contextReport(for: chat))
+    }
+}
+
 /// Every staged file in one pill: the newest's glyph, a count of the rest, all names on hover.
 private struct AttachmentsPill: View {
     @Environment(\.metrics) private var metrics

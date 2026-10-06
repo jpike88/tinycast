@@ -7,15 +7,18 @@ enum AIModelDiscovery {
         /// `nil` when the catalog doesn't say; OpenRouter lists `text`, `image`, `file`, `audio`.
         var inputModalities: [String]? = nil
         var reasoningOptions: AIConnection.ReasoningOptions?
+        /// `nil` when the catalog doesn't say; the margin the meter reads a session's spend against.
+        var contextLength: Int? = nil
 
         init(
             id: String, name: String, inputModalities: [String]? = nil,
-            reasoningOptions: AIConnection.ReasoningOptions? = nil
+            reasoningOptions: AIConnection.ReasoningOptions? = nil, contextLength: Int? = nil
         ) {
             self.id = id
             self.name = name
             self.inputModalities = inputModalities
             self.reasoningOptions = reasoningOptions
+            self.contextLength = contextLength
         }
 
         var acceptsImages: Bool? { inputModalities?.contains("image") }
@@ -92,7 +95,8 @@ enum AIModelDiscovery {
                             AIConnection.ReasoningOptions(
                                 efforts: $0.supportedEfforts ?? [],
                                 defaultEffort: $0.defaultEffort)
-                        })
+                        },
+                        contextLength: $0.contextLength)
                 })
         case .gemini:
             let response = try JSONDecoder().decode(GeminiResponse.self, from: data)
@@ -176,7 +180,8 @@ enum AIModelDiscovery {
             return Model(
                 id: id, name: name.isEmpty ? id : name,
                 inputModalities: model.inputModalities,
-                reasoningOptions: model.reasoningOptions)
+                reasoningOptions: model.reasoningOptions,
+                contextLength: model.contextLength.flatMap { $0 > 0 ? $0 : nil })
         }
     }
 
@@ -214,9 +219,10 @@ enum AIModelDiscovery {
             let displayName: String?
             let architecture: Architecture?
             let reasoning: Reasoning?
+            let contextLength: Int?
 
             enum CodingKeys: String, CodingKey {
-                case id, name, architecture, reasoning
+                case id, name, architecture, reasoning, contextLength = "context_length"
                 case displayName = "display_name"
             }
         }

@@ -128,7 +128,17 @@ bottom with the model picker. ⌘J hands a Quick AI conversation to the window.
   prompt and thinking tokens, and the model's window and cost where a route says them — Claude's CLI
   reports all of it, the Anthropic API its cache, OpenAI-shaped routes their reasoning tokens and
   OpenRouter its cost. `ChatMessage.usage` holds it and `message_details` keeps it, so a reopened chat
-  still knows its last turn.
+  still knows its last turn. A count of 0 reads as not reported — a gateway can say 0 where it knows
+  no count, and Inco's Anthropic-shaped endpoint does exactly that — and the card lists only the
+  facts a reply reported, so it never prints a placeholder 0 for a missing prompt. The session's
+  totals keep that rule too: they sum what replies actually reported, each kind arriving only from
+  reply that gave it. One floor is the turn's own: what went out was the whole request —
+  instructions, tools and every history turn — and a route whose input count misses any of that
+  yields to the request's estimate, while a route that reported more keeps its own word. A window
+  the route never names can still arrive: the model picker's catalog
+  publishes `context_length` per model (Inco, DeepInfra and OpenRouter do), it is stored on the
+  connection beside the rest of the catalog's say, and it is the meter's denominator only where
+  the route itself stayed silent — a route's own report outranks the catalog's.
 - **The on-device route is configured by having a Mac.** `.appleIntelligence` takes no key, opens no
   socket and names no endpoint, so the Keychain, HTTPS and ephemeral-session rules below have nothing
   to bind to — the Settings pane must never grow a credential field for it. It is text-only and
@@ -393,6 +403,13 @@ window's composer with the conversation. Chat History is the palette's own brows
 saved chats the window's sidebar lists: ↵ opens one in Quick AI, or in the window when the window
 already holds it, and Continue in AI Chat (`⌘J`) takes it to the window either way.
 
+The gauge left of the footer group carries the window's context status over: the same
+`ContextGauge` and `ContextCard` the composer draws, raised over the transcript's
+bottom edge above the bar. `QuickAIContextGauge` and `QuickAIContextCard` build the
+`ChatContextReport` inside their own bodies, so a streaming flush re-renders only the gauge,
+never the palette body. Both render only while the Quick AI mode is on screen — Chat History has
+none — and leaving the mode, or ordering the palette out, clears the hover that holds the card up.
+
 ### AI Chat
 
 The `AI Chat` command (`command:ai-chat-window`, `HotKeyAction.command(.aiChat)`) opens a titled
@@ -472,16 +489,25 @@ menu's own chords, and dies with the window.
   line without Return ever stealing an IME's confirm. It grows with its text to
   `aiChatComposerMaxHeight`, then scrolls. Under it: the paperclip (an `NSOpenPanel`), the model
   menu, the reasoning menu (always shown, disabled for a model with no efforts, so the row never
-  changes shape), a web-search toggle when the route offers search, a context gauge, and Send/Stop.
-  One paperclip takes every kind; its help names what this chat's model can read. The gauge is the
-  last reply's `contextTokens` against the model's window when the route reported one, and
-  `ChatSession.historyBytes` against Tinycast's history budget otherwise — orange from 80%, red at
-  100%. Hovering it raises Tinycast's own card (never a popover), drawn inside the transcript's
-  frame at its bottom edge — just above the composer and inside the window whatever its size — and
-  solid under its glass so the transcript cannot show through. `ChatContextReport`
-  lays it out: tokens in context of the window, input with its cached share, output with its
-  thinking share and cost; then what the next message sends — model, history of budget, messages
-  sent of total, staged files, and whether the system prompt, web search and tools ride along. The model and reasoning menus are this chat's, as Quick AI's header is Quick AI's. Files arrive by ⌘V, a drop anywhere on the pane, or the paperclip, and all three take
+  changes shape), a web-search toggle when the route offers search, an input–output gauge, and
+  Send/Stop. One paperclip takes every kind; its help names what this chat's model can read. The
+  gauge is a pair of arrow-and-ring gauges — beside the up arrow the last turn's input, its prompt
+  with cached tokens; beside the down arrow the reply. Each ring fills with its tokens' share of the
+  model's window when the route reports one, else with its share of the turn's prompt and reply
+  together, a reply with nothing reported leaving both empty; the rings wear the fill alarm's
+  colours, orange from 80%, red at 100%. Hovering it raises Tinycast's own card (never a popover),
+  drawn inside the transcript's frame at its bottom edge — just above the composer and inside the
+  window whatever its size — and solid under its glass so the transcript cannot show through.
+  `ChatContextReport`
+  lays it out: the session's totals first — every reply's reported input, cached prompt included,
+  and its output added together — in the compact meter spell (271k/900k), the input beside the
+  model's window: the route's own report where it gave one, else the catalog's `context_length`,
+  which the model picker's endpoint publishes for APIs like Inco; the output against a fixed meter
+  scale of 16k — a round figure to feel the conversation's spend against, not a limit anything
+  enforces, and a session that runs past it simply reads over — then the last turn, its tokens in
+  context of the window, input with its cached share, output with its thinking share and cost; then
+  what the next message sends — model, history of budget, messages sent of total, staged files, and
+  whether the system prompt, web search and tools ride along. The model and reasoning menus are this chat's, as Quick AI's header is Quick AI's. Files arrive by ⌘V, a drop anywhere on the pane, or the paperclip, and all three take
   the refusals a paste does. The unsent text lives on `AIChatState.draft`, so it survives closing
   the window.
 

@@ -312,7 +312,8 @@ final class AIChatState {
             break
         case .usage(let usage):
             guard var message = session.messages.last, message.role == .assistant else { return }
-            message.usage = usage
+            // `message_start` alone knows nothing; only a reported fact may claim the reply.
+            message.usage = usage == AIUsage() ? nil : usage
             session.replaceLast(with: message)
         case .finished:
             // The route is done, so this is all the text there is; the transcript types its tail
