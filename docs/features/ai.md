@@ -500,8 +500,9 @@ menu's own chords, and dies with the window.
   names what this chat's model can read. The gauge is a pair of arrow-and-ring gauges — beside the up
   arrow the last turn's input, its prompt with cached tokens; beside the down arrow the reply. Each
   ring fills with its tokens' share of the window where one is known — the route's own report where
-  it gave one, else the catalog's — both empty when nothing is reported or the window is unknown;
-  the rings wear the fill alarm's colours, orange from 80%, red at 100%. Hovering it raises
+  it gave one, else the catalog's — else with its share of the turn's prompt and reply together, a
+  turn with nothing reported leaving both empty; the rings wear the fill alarm's colours, orange
+  from 80%, red at 100%. Hovering it raises
   Tinycast's own card (never a popover), drawn inside the transcript's frame at its bottom edge — just
   above the composer and inside the window whatever its size — and solid under its glass so the
   transcript cannot show through. `ChatContextReport`
@@ -950,8 +951,8 @@ width and clipped the search field well short of the button.
 ## Settings and backup boundary
 
 Settings → AI is a normal grouped `Form` inside Tinycast's existing Settings window. Its top AI
-section owns the feature switch and the **Providers → Manage…** action, and **Default model** below
-it picks the app-wide route and its reasoning effort. A
+section owns the feature switch and the **Providers → Manage…** action, and the **Default** section
+below it picks one model and reasoning effort per surface — Quick AI, and the AI Chat window. A
 pick in Quick AI's header or the AI Chat composer sets that chat's model and moves this default with
 it, while Quick Actions keeps its own model selection.
 

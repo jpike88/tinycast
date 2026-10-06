@@ -815,8 +815,8 @@ extension ChatContextReport {
     }
 
     /// The two rings' fills: the model window's share where one is known, else the turn's split.
-    fileprivate var inputShare: Double { share(of: promptCount) }
-    fileprivate var outputShare: Double { share(of: replyCount) }
+    fileprivate var inputShare: Double { share(of: promptCount, against: replyCount) }
+    fileprivate var outputShare: Double { share(of: replyCount, against: promptCount) }
 
     /// The prompt — sent and cached alike — and the reply the route gave back.
     fileprivate var promptCount: Int? {
@@ -831,9 +831,12 @@ extension ChatContextReport {
     fileprivate var inputSummary: String { summary("Input", count: promptCount) }
     fileprivate var outputSummary: String { summary("Output", count: replyCount) }
 
-    private func share(of count: Int?) -> Double {
-        guard let count, count > 0, let window = reportedWindow, window > 0 else { return 0 }
-        return Double(count) / Double(window)
+    private func share(of count: Int?, against other: Int?) -> Double {
+        guard let count, count > 0 else { return 0 }
+        if let window = reportedWindow, window > 0 {
+            return Double(count) / Double(window)
+        }
+        return Double(count) / Double(count + (other ?? 0))
     }
 
     private func summary(_ title: String, count: Int?) -> String {
