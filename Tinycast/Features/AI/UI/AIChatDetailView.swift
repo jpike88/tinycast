@@ -619,7 +619,7 @@ private struct FindCounter: View {
 }
 
 ///  A pair of arrow-beside-ring gauges: the last turn's input with its arrow, the reply with its own.
-private struct ContextGauge: View {
+struct ContextGauge: View {
     let report: ChatContextReport
     @Binding var hovered: Bool
     @Environment(\.metrics) private var metrics
