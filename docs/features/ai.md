@@ -108,7 +108,8 @@ bottom with the model picker. ⌘J hands a Quick AI conversation to the window.
   linked `[n]`: `ChatCitations` finds each link's sentence end in the drawn text and inserts after
   it, two sources in one sentence sharing it, so prose and chips always agree. The preamble asks the model to link a page it relies on inline, so a cited
   answer carries its sources without a second request.
-- **Tools are chosen per chat.** The composer's tools menu switches MCP off for the chat or turns
+- **Tools are chosen per chat.** The Tools submenu under the composer's `+` switches MCP off for the
+  chat or turns
   single servers off (`ChatToolScope`, held on `AIChatState`, not stored); `@server` still narrows
   one turn inside that. The scope binds both shapes alike: Tinycast's loop is offered only the
   allowed servers' tools, and a Codex or Claude turn is handed only the allowed servers. A route that
@@ -481,35 +482,51 @@ menu's own chords, and dies with the window.
   at `aiChatReadingWidth`. The last finished reply offers Regenerate beside Copy: `AIChatState`
   drops only a trailing reply and asks again with the question and its attachments, of whichever
   model is selected now.
-- **Composer** (`AIChatDetailView`): one pane of untinted Liquid Glass, stacked under the transcript
-  rather than floated over it, with glass capsules for its menus, the glass on a background layer.
+- **Composer** (`AIChatDetailView`): one pane of untinted Liquid Glass at `Radius.dialog`, stacked
+  under the transcript rather than floated over it, holding the staged files, the text and one row of
+  controls, the glass on a background layer.
   The title bar keeps the system's own band, as a native document window's does.
   Transcript text runs `spacing.chatLine` apart, both surfaces. `ChatComposerTextView` is an `NSTextView`, not a `TextEditor`: its delegate sees
   `insertNewline:` only outside input-method composition, so Return sends and ⇧↩ or ⌥↩ breaks the
   line without Return ever stealing an IME's confirm. It grows with its text to
-  `aiChatComposerMaxHeight`, then scrolls. Under it: the paperclip (an `NSOpenPanel`), the model
-  menu, the reasoning menu (always shown, disabled for a model with no efforts, so the row never
-  changes shape), a web-search toggle when the route offers search, an input–output gauge, and
-  Send/Stop. One paperclip takes every kind; its help names what this chat's model can read. The
-  gauge is a pair of arrow-and-ring gauges — beside the up arrow the last turn's input, its prompt
-  with cached tokens; beside the down arrow the reply. Each ring fills with its tokens' share of the
-  model's window when the route reports one, else with its share of the turn's prompt and reply
-  together, a reply with nothing reported leaving both empty; the rings wear the fill alarm's
-  colours, orange from 80%, red at 100%. Hovering it raises Tinycast's own card (never a popover),
-  drawn inside the transcript's frame at its bottom edge — just above the composer and inside the
-  window whatever its size — and solid under its glass so the transcript cannot show through.
-  `ChatContextReport`
-  lays it out: the session's totals first — every reply's reported input, cached prompt included,
-  and its output added together — in the compact meter spell (271k/900k), the input beside the
-  model's window: the route's own report where it gave one, else the catalog's `context_length`,
-  which the model picker's endpoint publishes for APIs like Inco; the output against a fixed meter
-  scale of 16k — a round figure to feel the conversation's spend against, not a limit anything
-  enforces, and a session that runs past it simply reads over — then the last turn, its tokens in
-  context of the window, input with its cached share, output with its thinking share and cost; then
-  what the next message sends — model, history of budget, messages sent of total, staged files, and
-  whether the system prompt, web search and tools ride along. The model and reasoning menus are this chat's, as Quick AI's header is Quick AI's. Files arrive by ⌘V, a drop anywhere on the pane, or the paperclip, and all three take
-  the refusals a paste does. The unsent text lives on `AIChatState.draft`, so it survives closing
+  `aiChatComposerMaxLines` lines or `aiChatComposerHeightFraction` of the pane's height, whichever is
+  fewer, in whole lines, then scrolls; resizing the window recomputes the cap. Under it: a `+` menu
+  (Attach Files…, an `NSOpenPanel`; Web Search when the route offers it; the Tools submenu), an accent
+  Search pill while web search is on, whose click turns it off, then the model menu, the reasoning
+  menu (a word with no glyph, always shown, disabled for a model with no efforts, so the row never
+  changes shape), an input–output gauge, the mic while Dictation is on, and Send/Stop. Every control
+  is `aiChatComposerControl` tall with one `aiChatComposerGlyph` slot and bare until hovered; Search
+  gives up its word before the model's name truncates. One Attach Files… takes every kind; its help
+  names what this chat's model can read. The gauge is a pair of arrow-and-ring gauges — beside the up
+  arrow the last turn's input, its prompt with cached tokens; beside the down arrow the reply. Each
+  ring fills with its tokens' share of the window where one is known — the route's own report where
+  it gave one, else the catalog's — both empty when nothing is reported or the window is unknown;
+  the rings wear the fill alarm's colours, orange from 80%, red at 100%. Hovering it raises
+  Tinycast's own card (never a popover), drawn inside the transcript's frame at its bottom edge — just
+  above the composer and inside the window whatever its size — and solid under its glass so the
+  transcript cannot show through. `ChatContextReport`
+  lays it out: the session's totals first — every reply's reported input, cached prompt included, and
+  its output added together — in the compact meter spell (271k/900k), the input beside the model's
+  window: the route's own report where it gave one, else the catalog's `context_length`, which the
+  model picker's endpoint publishes for APIs like Inco; the output against a fixed meter scale of
+  16k — a round figure to feel the conversation's spend against, not a limit anything enforces, and a
+  session that runs past it simply reads over — then the last turn, its tokens in context of the
+  window, input with its cached share, output with its thinking share and cost; then what the next
+  message sends — model, history of budget, messages sent of total, staged files, and whether the
+  system prompt, web search and tools ride along. The model and reasoning menus are this chat's, as
+  Quick AI's header is Quick AI's. Files arrive by ⌘V, a drop anywhere on the pane, or Attach Files…,
+  and all three take the refusals a paste does. The text field takes a file drop itself and hands it
+  to the same attach, since an `NSTextView` would otherwise type the file's path. The unsent text
+  lives on `AIChatState.draft`, so it survives closing
   the window.
+- **The composer's mic is Dictation's, and only shown while Dictation is on.** A click runs
+  `DictationCoordinator.toggle(into:)` for this field whatever the shortcut's hold-or-toggle mode or
+  the window's focus; a second click or Return finishes, Escape cancels, and the transcript goes in
+  at the caret, never to the clipboard. With no model installed the click opens Settings → Dictation.
+  The field is a `ComposerTextView`, an `InjectableTextView`, so the Dictation shortcut, snippets and
+  Quick Actions write into it in process, as they do into a note.
+  Switching chats or closing the window cancels dictation targeting its composer before the editor
+  is rebound or torn down; a queued transcript cannot land in another chat or a closed editor.
 
 `AIChatState` turns provider-neutral stream events into one live assistant message. Thinking state is
 shown without entering the transcript, partial text is preserved on failure, cancellation invalidates
