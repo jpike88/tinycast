@@ -630,7 +630,7 @@ struct ContextGauge: View {
             gauge("arrow.down", share: report.outputShare, label: report.outputSummary)
         }
         .padding(.horizontal, metrics.spacing.xs)
-        .frame(width: Theme.Size.aiChatComposerControl, height: Theme.Size.aiChatComposerControl)
+        .frame(height: Theme.Size.aiChatComposerControl)
         .composerControl()
         .onHover { hovered = $0 }
     }
