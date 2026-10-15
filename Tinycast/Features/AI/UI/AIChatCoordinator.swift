@@ -89,6 +89,11 @@ final class AIChatCoordinator {
         }
     }
 
+    func toggleWindow() {
+        guard !closeWindowIfKey() else { return }
+        showWindow()
+    }
+
     /// The window's views read these through the coordinator, never through `AppCore`.
     var history: ChatHistoryStore { core.chatHistory }
     var aiSettings: AISettingsStore { core.aiSettings }
@@ -183,6 +188,7 @@ final class AIChatCoordinator {
                 title: "Delete chat?", message: "“\(title)” will be removed. This can't be undone.",
                 symbol: "trash", confirmTitle: "Delete")
         else { return }
+        core.chatGPTSubscription.turns.discardConversation(id: id)
         chats.delete(id: id)
     }
 
@@ -194,6 +200,9 @@ final class AIChatCoordinator {
                     + "This can't be undone.",
                 symbol: "trash", confirmTitle: "Delete All")
         else { return }
+        for conversation in core.chatHistory.conversations where !conversation.isPinned {
+            core.chatGPTSubscription.turns.discardConversation(id: conversation.id)
+        }
         chats.deleteAll()
     }
 

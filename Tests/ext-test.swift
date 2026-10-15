@@ -199,6 +199,7 @@ struct ExtensionTests {
         await runtimeChecks()
         await searchAccessoryRuntimeChecks()
         await nodeContractChecks()
+        await bufferEventChecks()
         await webAssemblyChecks()
         await asyncComponentChecks()
         await menuBarRuntimeChecks()
@@ -1470,6 +1471,28 @@ struct ExtensionTests {
               assert.equal(fs.readFileSync(moved).subarray(0, 3).toString(), "YaX");
               const listing = "\(directory.path)/listing";
               fs.mkdirSync(listing + "/folder", { recursive: true });
+              assert.equal(code(() => fs.mkdirSync(listing + "/folder")), "EEXIST");
+              assert.equal(code(() => fs.mkdirSync(moved)), "EEXIST");
+              assert.equal(code(() => fs.mkdirSync(listing + "/missing/child")), "ENOENT");
+              assert.equal(await call("mkdir", listing + "/folder").then(
+                () => "none", (error) => error.code), "EEXIST");
+              fs.mkdirSync(listing + "/folder", { recursive: true });
+              fs.utimesSync(listing, new Date(1000000), new Date(2000005));
+              assert.equal(fs.statSync(listing).mtime.getTime(), 2000005);
+              await call("utimes", listing, 3000, 4000.25);
+              assert.equal(fs.statSync(listing).mtime.getTime(), 4000250);
+              await fs.promises.utimes(listing, "5000", "6000.125");
+              assert.equal(fs.statSync(listing).mtime.getTime(), 6000125);
+              for (const stamp of [1700000000001, 1700000000999, Date.now()]) {
+                await call("utimes", listing, new Date(stamp), new Date(stamp));
+                assert.equal(fs.statSync(listing).mtime.getTime(), stamp);
+              }
+              const touched = Date.now();
+              fs.utimesSync(listing, -1, -1);
+              assert(fs.statSync(listing).mtimeMs >= touched);
+              assert(fs.statSync(listing).mtimeMs <= Date.now());
+              assert.equal(code(() => fs.utimesSync(listing + "/missing", 0, 0)), "ENOENT");
+              assert.equal(code(() => fs.utimesSync(listing, Infinity, 0)), "ERR_INVALID_ARG_VALUE");
               fs.writeFileSync(listing + "/entry", "");
               const handle = fs.opendirSync(listing);
               assert.equal(handle.path, listing);
@@ -1517,6 +1540,71 @@ struct ExtensionTests {
             recorder.failures.joined(separator: "|"))
         await runtime.stop(session: "archive")
         runtime.shutdown()
+    }
+
+    @MainActor
+    static func bufferEventChecks() async {
+        for (name, body) in [
+            (
+                "slow-buffer",
+                """
+                  const { Buffer } = require("buffer");
+                  const SafeBuffer = Buffer.from && Buffer.alloc && Buffer.allocUnsafe && Buffer.allocUnsafeSlow
+                    ? Buffer : function (size) { return Buffer(size); };
+                  assert.equal(new SafeBuffer(4).length, 4);
+                  assert(Object.keys(Buffer).includes("allocUnsafeSlow"));
+                  const first = SafeBuffer.allocUnsafeSlow(4), second = SafeBuffer.allocUnsafeSlow(4);
+                  first[0] = 91;
+                  assert.equal(Array.from(second).join(), "0,0,0,0");
+                  assert(first.buffer !== second.buffer);
+                  assert(Buffer.isBuffer(Buffer.allocUnsafeSlow(0)));
+                  assert.equal(Buffer.allocUnsafeSlow(0).length, 0);
+                """
+            ),
+            (
+                "once-receiver",
+                """
+                  const { EventEmitter } = require("events");
+                  const emitter = new EventEmitter(), calls = [];
+                  assert(emitter.once("ready", function (...args) {
+                    calls.push([this === emitter, ...args, emitter.listenerCount("ready")]);
+                    emitter.emit("ready", "recursive");
+                  }) === emitter);
+                  assert(emitter.emit("ready", "value", 7));
+                  assert.equal(JSON.stringify(calls), '[[true,"value",7,0]]');
+                  assert(!emitter.emit("ready", "again"));
+                  let removedCalls = 0;
+                  function removed() { removedCalls++; }
+                  emitter.once("removed", removed).removeListener("removed", removed);
+                  emitter.emit("removed");
+                  assert.equal(removedCalls, 0);
+                  const ordinary = [];
+                  emitter.on("ordinary", function (value) { ordinary.push([this === emitter, value]); });
+                  emitter.emit("ordinary", 1);
+                  emitter.emit("ordinary", 2);
+                  assert.equal(JSON.stringify(ordinary), "[[true,1],[true,2]]");
+                """
+            )
+        ] {
+            let (runtime, host, recorder) = makeRuntime()
+            try? await runtime.boot(
+                config: .current(supportDirectory: FileManager.default.temporaryDirectory))
+            let command = """
+                module.exports.default = async () => {
+                  const assert = require("assert");
+                  \(body)
+                  await require("@raycast/api").showHUD("\(name) passed");
+                };
+                """
+            await runtime.start(
+                session: name, code: command,
+                file: FileManager.default.temporaryDirectory.appendingPathComponent("\(name).js"),
+                mode: .noView, context: launchContext(mode: .noView))
+            await settle()
+            check(name, host.huds == ["\(name) passed"], recorder.failures.joined(separator: "|"))
+            await runtime.stop(session: name)
+            runtime.shutdown()
+        }
     }
 
     /// sql.js loads through `WebAssembly.instantiate`, whose promise never settled on the JS queue.
