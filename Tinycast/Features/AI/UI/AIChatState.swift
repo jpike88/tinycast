@@ -316,7 +316,6 @@ final class AIChatState {
             message.usage = usage == AIUsage() ? nil : usage
             session.replaceLast(with: message)
         case .finished:
-        case .finished:
             // The route is done, so this is all the text there is; the transcript types its tail
             // before the reply is committed as a whole.
             flushPendingText()

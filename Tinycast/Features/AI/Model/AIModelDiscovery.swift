@@ -251,6 +251,7 @@ enum AIModelDiscovery {
                 displayName = try? container.decodeIfPresent(String.self, forKey: .displayName)
                 architecture = try? container.decodeIfPresent(Architecture.self, forKey: .architecture)
                 reasoning = try? container.decodeIfPresent(Reasoning.self, forKey: .reasoning)
+                contextLength = try? container.decodeIfPresent(Int.self, forKey: .contextLength)
             }
         }
 

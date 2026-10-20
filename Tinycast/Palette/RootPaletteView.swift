@@ -436,11 +436,7 @@ struct RootPaletteView: View {
                 fileSearch.search(vm.query, filter: vm.fileSearchFilter)
             }
             .onChange(of: vm.mode) {
-                vm.clipboardFilter = .all
-                vm.fileSearchFilter = .all
-                vm.emojiCategoryFilter = .all
-                vm.emojiGridColumnsOverride = nil
-                vm.fileSearchQuickLook = false
+                vm.clearModeFilters()
                 showsContext = false
                 if menuOpen { closeMenus() }
                 land(restoringSelection: true)

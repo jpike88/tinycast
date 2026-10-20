@@ -186,6 +186,14 @@ final class PaletteState {
         restoredSelection = selection
     }
 
+    /// Every per-screen filter resets together, so a screen change never carries one over.
+    func clearModeFilters() {
+        clipboardFilter = .all
+        fileSearchFilter = .all
+        emojiCategoryFilter = .all
+        emojiGridColumnsOverride = nil
+    }
+
     func noteFavoriteSlot(_ index: Int) {
         favoriteSlotIndex = index
         favoriteSlotToken = UUID()
