@@ -15,7 +15,7 @@ produces, rendered natively into the palette. No Electron, no browser, no Node.j
 - **At most two commands run concurrently.** The palette and scheduled `no-view` refreshes share one
   runtime; a foreground launch preempts its background refresh. Menu commands use a separate runtime,
   serialized by `ExtensionMenuBarManager`. Every menu session has its own bridge and an immutable
-  extension namespace, so storage, preferences, OAuth and command launches cannot target the palette's
+  extension namespace, so storage, preferences and command launches cannot target the palette's
   extension. Shutdown cancels pending host tasks; a generation check rejects replies from old contexts.
 - **Bridges share one private HTTP transport, never execution state.** Cookies, credential storage and
   URL caching are disabled. Individual task cancellation leaves other requests running; releasing the
@@ -41,12 +41,12 @@ produces, rendered natively into the palette. No Electron, no browser, no Node.j
 
 ## How it works
 
-A Raycast extension command is a **single prebuilt CommonJS file** that keeps `react`,
-`react/jsx-runtime`, `@raycast/api` and the Node built-ins external. Tinycast supplies exactly those,
-runs the bundle, and renders the React tree it produces:
+A Raycast extension command is a **prebuilt CommonJS file** that keeps `react`,
+`react/jsx-runtime`, `@raycast/api` and the Node built-ins external. Tinycast supplies those and
+resolves any third-party packages shipped under `node_modules/`, then renders the React tree:
 
 ```
-  <command>.js  (esbuild output, deps inlined)
+  <command>.js  (esbuild output, deps inlined or in node_modules)
         │  require("@raycast/api"), require("react"), require("node:fs"), …
         ▼
   RaycastRuntime.generated.js          ← in the app bundle; React 19 + react-reconciler
@@ -96,7 +96,6 @@ same arrangement as `EmojiData.generated.swift`: building Tinycast never needs N
 | `src/reconciler.js`                              | `react-reconciler` host config that commits into a JSON tree                                                           |
 | `src/api/components.js`                          | every `@raycast/api` component                                                                                         |
 | `src/api/system.js`                              | Clipboard, LocalStorage, Cache, Toast, preferences, environment                                                        |
-| `src/api/oauth.js`                               | `OAuth.PKCEClient`, `OAuth.TokenSet`, redirect url builders                                                            |
 | `src/api/enums.generated.js`                     | Icon / Color / Toast.Style / … extracted from the real `@raycast/api` types                                            |
 | `src/node-shims.js`                              | `path`, `fs`, `os`, `child_process`, `crypto`, `zlib`, `util`, `events`, `buffer`, `punycode`, …                       |
 | `src/websocket.js`                               | the `WebSocket` global, and the raw socket a bundled `ws` attaches to                                                  |
@@ -106,7 +105,7 @@ same arrangement as `EmojiData.generated.swift`: building Tinycast never needs N
 Two host-call flavours:
 
 - **Async** (`invoke`) for anything that needs the main actor — clipboard, toasts, window control,
-  `fetch`, `exec`, `oauth`. Swift answers later through `__tinycast.settle`, so the JS thread never blocks on the
+  `fetch`, `exec`. Swift answers later through `__tinycast.settle`, so the JS thread never blocks on the
   UI.
 - **Blocking** (`invokeSync`) for the synchronous Node shims only — `fs.readFileSync`,
   `execSync`, `createHash`, `gunzipSync`. Safe because Swift services these entirely on the JS queue;
@@ -119,13 +118,12 @@ Two host-call flavours:
 | File                                          | Role                                                                                                       |
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `Service/ExtensionRuntime.swift`              | the `JSContext`, host-function installation, timers, exception reporting                                   |
-| `Service/ExtensionHostBridge.swift`           | main-actor host APIs (clipboard, storage, cache, window, toasts, system, oauth)                            |
+| `Service/ExtensionHostBridge.swift`           | main-actor host APIs (clipboard, storage, cache, window, toasts, system)                            |
+| `Service/ExtensionSignInSession.swift`        | the browser step of an extension's OAuth sign-in (`ASWebAuthenticationSession`)                     |
 | `Service/ExtensionNodeShims.swift`            | the synchronous `fs` / `os` / `child_process` / `crypto` / `zlib` services                                 |
-| `Service/ExtensionFetcher.swift`              | `fetch` over `URLSession`, plus collecting async `exec` children and the shared PATH resolver              |
+| `Service/ExtensionFetcher.swift`              | HTTP over `URLSession` or a Unix socket, plus async `exec` collection and the shared PATH resolver         |
 | `Service/ExtensionWebSocketBridge.swift`      | `URLSessionWebSocketTask` connections, opened and read from JS                                             |
 | `Service/ExtensionNameResolver.swift`         | `getaddrinfo`, which is how a `.local` name resolves                                                       |
-| `Service/ExtensionOAuthKeychain.swift`        | secure OAuth token storage backed by macOS Keychain                                                        |
-| `Service/ExtensionOAuthSession.swift`         | PKCE state tracking, browser launch, and callback redirect resolution                                      |
 | `Service/ExtensionStorage.swift`              | per-extension `LocalStorage`, `Cache` and preference values (one JSON file each)                           |
 | `Service/ExtensionCommandMetadataStore.swift` | every command's subtitle override, refresh bookkeeping and menu-bar state, in one small file               |
 | `Service/ExtensionCatalog.swift`              | discovery on disk, install, uninstall, import-from-Raycast                                                 |
@@ -183,8 +181,8 @@ receive `left-click` or `right-click`; keyboard activation is a left click. Asyn
 awaited before teardown, including overlapping actions after reopening the same menu. Opening another
 menu queues its runtime until the current work finishes. Returning `null` removes the item while keeping
 its refresh schedule.
-Opening during a background refresh reuses that session and enables interactive confirmations, HUDs
-and OAuth for its actions. Its original JavaScript launch type still describes how the session started.
+Opening during a background refresh reuses that session and enables interactive confirmations and HUDs
+for its actions. Its original JavaScript launch type still describes how the session started.
 
 The menu is attached to the status item, so AppKit owns tracking: it positions and dismisses the menu,
 and a click on any other status item hands off to that item the way two native menus do. Attaching it
@@ -253,7 +251,7 @@ screens hold (see [palette.md](palette.md)).
   of the palette's `OpenMenu` cases, so the arrows, ↵, Escape and the click-away come from the one menu
   path and no second key handler exists to disagree with it. `PaletteFilterAction` routes ⌘P, so a
   command's own dropdown answers before Tinycast's clipboard filter can. The list is
-  `listWidth` (240) rather than a form picker's 360: it hangs off a chip, not a field.
+  `listWidth` (240) rather than a form picker's field width: it hangs off a chip, not a field.
   Its native search field sits above the choices and uses the palette menu's fuzzy matcher.
   **Swift owns the selection** — the runtime keeps `makeSearchDropdown` hook-free so an extension may
   call `List.Dropdown({…})` directly — so `ExtensionManager.accessoryValues` keys it by render-node id
@@ -321,11 +319,19 @@ screens hold (see [palette.md](palette.md)).
   is stated, so a field, a picker and a text area line up by construction. A `Picker` opens only to a
   click and a `DatePicker` has no expression field, which is why neither is used.
 
+  Form fields use a 12pt corner radius and the same neutral border colour at rest and in focus;
+  focus thickens the border to 2pt without changing the fill. These values stay extension-owned,
+  independently of the native launcher forms. Editable text controls receive the I-beam from their
+  visible native bounds.
+
+  Their height is 34pt, with 12pt horizontal and 8pt vertical text insets. Their width matches native
+  single-column forms at every Interface Size, with the geometry restated locally rather than shared.
+
   A `Form.Dropdown` and a `Form.TagPicker` are the same control — `ExtensionPickerField` — differing
   only in whether it holds one value or several. It drops `ExtensionPickerList`, a searchable list,
   and **the control keeps first responder the whole time it is open**: the list is a separate window,
   and a second field inside it would take focus off the control and close the list. So the
-  popover's search row renders the query rather than editing it, and every key — the arrows, ↵, ⎋,
+  popover's search row renders the query rather than editing it, and every key — the arrows, ↵, esc,
   ⌫ and each typed character — is claimed on the control. `PaletteState.isControlListOpen` is what
   keeps the palette's own arrow and Escape handlers out of an open list; without it ↓ moved the
   form's selection instead of the list's highlight.
@@ -433,7 +439,8 @@ screens hold (see [palette.md](palette.md)).
 Escape clears a non-empty search field first, and dispatches `onSearchTextChange` as any other edit
 would, so a command that took the search text over sees the empty string. Only over an empty field do
 Escape and a bare backspace pop the extension's own navigation stack, and only leave the command once
-it's at its root. Pushed screens stay mounted, so popping back restores their state.
+it's at its root. Pushed screens stay mounted, so popping back restores their state. Each pushed
+screen starts with an empty search; going back restores the parent's query and selected row.
 
 ## Turning it on
 
@@ -458,7 +465,8 @@ real app; see [launcher.md](launcher.md#owner-names).
 
 Extensions live in `~/Library/Application Support/<bundle id>/extensions/<name>/`, keyed by bundle id
 like everything else, so a Debug build never shares installs with a release channel. A directory holds
-`package.json`, `assets/` and one `<command>.js` per command — byte-for-byte the layout Raycast's own
+`package.json`, `assets/`, one `<command>.js` per command and, when the build externalised
+dependencies, a `node_modules/` of pre-built packages — byte-for-byte the layout Raycast's own
 build produces.
 
 Settings → Extensions offers four routes, under **Install New**:
@@ -477,8 +485,11 @@ Settings → Extensions offers four routes, under **Install New**:
 4. **Add from folder** — pick any directory with a manifest and built command files, e.g. an extension
    you just ran `ray build` in.
 
-Only `package.json`, the built commands and `assets/` are copied — never `node_modules` or the
-multi-megabyte `.js.map` Raycast writes beside each bundle.
+Only `package.json`, the built commands, `assets/` and any bundled `node_modules/` are copied —
+never the multi-megabyte `.js.map` Raycast writes beside each bundle. Store `dist` bundles leave
+third-party packages external and ship them, pre-built CommonJS, under `node_modules/`; the embedded
+runtime resolves those from the command's directory, never above the extension's own folder, so
+they must survive the install. A build that inlined everything simply has no such folder.
 
 ## Installing from GitHub
 
@@ -586,6 +597,14 @@ global Show in launcher switch, or this extension's — because the ranker never
 
 ## Deeplinks
 
+Tinycast registers `raycast`, `com.raycast` and `tinycast` to receive extension links. An installed
+Raycast competes for its schemes, and macOS chooses which app receives a link.
+
+`raycast://extensions/<owner>/<extension>?source=webstore`, used by the Store website's Install
+buttons, opens Settings → Extensions and looks up that exact listing to offer the existing Install
+or Reinstall action. Nothing installs or runs until asked. When extensions are disabled, the link
+opens their Settings pane so they can be enabled through the usual consent flow.
+
 `raycast://extensions/<owner>/<extension>/<command>` runs an installed command from outside the app —
 a browser link, another app, a Shortcut — and `tinycast://` mirrors it so our own links never depend
 on Raycast winning the scheme. Both accept Raycast's query parameters: `arguments` as URL-encoded
@@ -594,7 +613,9 @@ command always takes over the palette, so it launches as `userInitiated`. The ow
 scoped install matches by `owner/extension` first and falls back to the bare slug, so short links
 keep working. Anything else on a claimed scheme just reopens the palette, and an unknown command says
 so rather than failing silently. `ExtensionDeepLink` owns the claimed schemes and the parsing,
-covered by `Tests/ext-test.swift`; an extension's own `open("raycast://…")` resolves through the same
+covered by `Tests/ext-test.swift`. Two-segment links without `source=webstore` keep running commands
+as `<extension>/<command>`; three-segment command links keep running even with that parameter.
+An extension's own `open("raycast://…")` resolves through the same
 `ExtensionManager.resolve(_:)` instead of launching Raycast.
 
 For view commands, nonempty `fallbackText` also prefills the search field: lists and grids filter
@@ -652,27 +673,8 @@ interval floor instead of sixty.
 `showHUD`, `confirmAlert`, `closeMainWindow`, `popToRoot`, `clearSearchBar`, `open`, `trash`,
 `showInFinder`, `getApplications`, `getDefaultApplication`, `getFrontmostApplication`,
 `getSelectedText`, `getSelectedFinderItems`, `launchCommand`, `updateCommandMetadata`,
-`openExtensionPreferences`,
-`useNavigation`, `OAuth`, `Icon`, `Color`, `Image.Mask`, `Keyboard.Shortcut.Common`, `LaunchType`.
-
-**OAuth 2.0 PKCE** — `OAuth.PKCEClient`, `OAuth.TokenSet`, `OAuth.RedirectMethod`, with S256 challenges and
-tokens in the login Keychain (service `com.tinycast.extensions.oauth`, `kSecAttrAccessibleWhenUnlocked`),
-scoped per extension and dropped on uninstall.
-
-The redirect address belongs to the extension author's OAuth app registration, so Tinycast cannot choose
-it — it can only be there to catch it. **Tinycast therefore claims `raycast`, `com.raycast` and `tinycast`
-as URL schemes**, which is what makes all three of Raycast's redirect methods land back in the app:
-
-| `RedirectMethod` | Registered address                                   | How it returns                                         |
-| ---------------- | ---------------------------------------------------- | ------------------------------------------------------ |
-| `App`            | `raycast://oauth?package_name=Extension`             | straight to Tinycast, no server                        |
-| `AppURI`         | `com.raycast:/oauth?package_name=Extension`          | straight to Tinycast, no server                        |
-| `Web`            | `https://raycast.com/redirect?packageName=Extension` | through Raycast's page, which reopens a claimed scheme |
-
-Claiming `raycast` means an installed Raycast competes with Tinycast for those links and macOS picks the
-winner. That is a deliberate trade: without it, `App` redirects have nowhere to land. `Web` additionally
-depends on a page Raycast can change at any time — `ExtensionOAuthSession` times out after five minutes so
-a redirect that never arrives cannot wedge the palette.
+`openExtensionPreferences`, `OAuth`,
+`useNavigation`, `Icon`, `Color`, `Image.Mask`, `Keyboard.Shortcut.Common`, `LaunchType`.
 
 **`raycast://` URLs** — extensions address Raycast by scheme; the most common is a bare
 `open("raycast://")` to bring the window back after something stole focus (1Password's auth flow does
@@ -680,13 +682,24 @@ this). `ExtensionHostBridge` keeps those inside Tinycast: `raycast://extensions/
 runs that command when it's installed, anything else reopens the palette. Handing them to the workspace
 would launch Raycast itself.
 
+**`OAuth`** — `PKCEClient` builds the RFC 7636 request in JS, and `@raycast/utils`' `OAuthService`
+runs on top of it unchanged. The browser step is `ExtensionSignInSession`: providers have Raycast's
+fixed redirect URIs registered, which all end on `raycast://oauth` or `com.raycast:/oauth`, and
+`ASWebAuthenticationSession` intercepts that scheme itself, so an installed Raycast cannot take the
+redirect. Raycast's web redirect page drops `state`, so only a returned `state` is checked. Each
+provider's token set lives in the extension's data file, beside its preferences, keyed by
+`providerId`. Only a command the user opened can start a sign-in; a background refresh fails until
+then. While the browser is up the palette hides, but Pop to Root Search holds off, because resetting
+would stop the command and cancel the sign-in. Summoning the palette meanwhile returns to the waiting
+command, and the palette comes back on its own when the redirect lands.
+
 **Node built-ins** — `path`, `fs` (+ `fs/promises`, `createReadStream`/`createWriteStream`, a snapshot-backed `opendir`, and
 the descriptor calls `tar` unpacks through), `os`,
 `child_process` (`exec`, `execFile`, `execSync`, `execFileSync`, `spawnSync`, and a streaming `spawn`,
 each async form reporting the child's real `pid` for `process.kill` — Timers pauses that way),
 `crypto` (hashes, HMAC, PBKDF2, AES-CBC/ECB, random, UUID), `zlib` (gzip/zlib/raw deflate, both
 directions, plus `create*` streams that buffer until `end`), `http`/`https` (`request`, `get` and `Agent`, buffered over the same URLSession bridge
-as `fetch`), `stream` (`Readable`, `Writable`, `Duplex`, `Transform`, `PassThrough`, `pipeline`,
+as `fetch`, with `socketPath` for Unix-socket HTTP), `stream` (`Readable`, `Writable`, `Duplex`, `Transform`, `PassThrough`, `pipeline`,
 `finished`, plus `stream/promises` and `stream/web`), `util`, `events`, `buffer`, `url`, `querystring`, `punycode`, `assert`,
 `string_decoder`, `timers`. Every other built-in resolves to a stub that throws only when used, so a
 bundle that merely references `http2` or `domain` still loads. Those stubs are manufactured lazily,
@@ -739,6 +752,21 @@ shim answers it: one request when the body ends, one response chunk when the bri
 transport decodes for us, so the response drops `content-encoding` and `content-length` rather than
 have the client gunzip plaintext.
 
+An explicit `socketPath` selects Unix-socket HTTP, which Docker uses for its local daemon. The host
+runs macOS's bundled `/usr/bin/curl` off-main because URLSession has no public Unix-socket transport.
+Pipe draining and process-exit waits run on a Dispatch worker while the Swift task suspends, so slow
+socket responses do not occupy Swift's cooperative thread pool.
+The child bypasses proxies and user curl configuration, decodes compressed bodies, and returns HTTP
+statuses, headers and binary bodies through the same bridge. Cancellation terminates and collects
+that request's child; request-body scratch files are private and removed on exit. Requests without
+`socketPath` continue through the shared ephemeral URLSession. Responses remain buffered, so Docker
+log streams, event streams and interactive attach sessions are outside this transport's support.
+An unavailable socket reports an actionable connection error and shows the existing failure toast
+for a foreground command. Background commands stay silent, and the extension still receives the
+rejected request so its own error handling can run.
+Repeated failures of that socket show one toast until a connection succeeds or the command session
+ends, so polling cannot continually replay its entrance or undo a dismissal.
+
 Two things decide whether it gets there. Axios enables that adapter only when
 `Object.prototype.toString.call(process)` reads `[object process]`, so `process` carries the tag; and
 follow-redirects inherits with `Writable.call(this)`, so `stream` hands out callable constructors.
@@ -782,14 +810,12 @@ Launch contexts also carry JSON `props.launchContext`.
 
 Measured against the 37 extensions installed in a real Raycast on the development machine: **32
 extensions / 114 of 147 view commands** boot and render. `Scripts/raycast-runtime/test.mjs <dir>` and
-`Scripts/run-tests.sh ext-test` reproduce that measurement. OAuth landed after this run, so the three
-OAuth extensions it excluded are not counted yet — re-measure before quoting these numbers.
+`Scripts/run-tests.sh ext-test` reproduce that measurement.
 
 ## What isn't supported yet
 
 | Gap                                                          | Why                                                                                                                                                                                                                                                                                                                                          |
 | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Raycast's PKCE proxy (`oauth.raycast.com`)**               | Extensions whose provider has no PKCE support exchange tokens through Raycast's proxy. `OAuth.PKCEClient` works; a provider that needs that proxy still fails.                                                                                                                                                                               |
 | **`AI`, `BrowserExtension`, `WindowManagement`**             | Raycast services with no local equivalent. Importing them works; calling one throws with a clear reason.                                                                                                                                                                                                                                     |
 | **A WebSocket to a host with a certificate macOS distrusts** | `ws`'s `rejectUnauthorized: false` is ignored — URLSession validates the chain either way.                                                                                                                                                                                                                                                   |
 | **Aborting a `fetch` already in flight**                     | `AbortSignal` is complete — `timeout`, `abort` and `any` included — and `fetch` checks it on both sides of the host call, so a caller gets its `AbortError`. The request itself still runs to completion: the signal isn't carried across the bridge, so nothing cancels the `URLSessionTask`. A timeout bounds the caller, not the network. |
@@ -854,20 +880,19 @@ contains frames only (V8 repeats the message, so the headline has to be prepende
 Everything is under `~/Library/Application Support/<bundle id>/`, keyed by bundle id so a Debug run
 never shares with an installed copy.
 
-| What                                 | Where                                                 | Gone on uninstall |
-| ------------------------------------ | ----------------------------------------------------- | ----------------- |
-| The extension                        | `extensions/<name>/`                                  | yes               |
-| `LocalStorage`, `Cache`, preferences | `extension-data/<safe name>.json`                     | yes               |
-| Command subtitle, refresh state      | `extension-commands.json`                             | yes               |
-| Installed store version              | `extension-versions.json`                             | yes               |
-| `environment.supportPath`            | `extension-support/<safe name>/`                      | yes               |
-| OAuth tokens                         | macOS Keychain (`com.tinycast.extensions.oauth`)      | yes               |
-| Menu-bar activation and snapshot     | `extension-commands.json`                             | yes               |
-| Icon override                        | `UserDefaults` → `extensionAppearances`               | yes               |
-| Command shortcuts                    | `UserDefaults` → `hotkey.extensionCommand.<entry id>` | yes               |
-| Favorites, hidden items              | `UserDefaults` → `favoriteApps`, `hiddenItemKeys`     | yes               |
-| User alias                           | `UserDefaults` → `launcherAliases`                    | yes               |
-| Launch ranking                       | `launcher-ranking.json`                               | yes               |
+| What                                               | Where                                                 | Gone on uninstall |
+| -------------------------------------------------- | ----------------------------------------------------- | ----------------- |
+| The extension                                      | `extensions/<name>/`                                  | yes               |
+| `LocalStorage`, `Cache`, preferences, OAuth tokens | `extension-data/<safe name>.json`                     | yes               |
+| Command subtitle, refresh state                    | `extension-commands.json`                             | yes               |
+| Installed store version                            | `extension-versions.json`                             | yes               |
+| `environment.supportPath`                          | `extension-support/<safe name>/`                      | yes               |
+| Menu-bar activation and snapshot                   | `extension-commands.json`                             | yes               |
+| Icon override                                      | `UserDefaults` → `extensionAppearances`               | yes               |
+| Command shortcuts                                  | `UserDefaults` → `hotkey.extensionCommand.<entry id>` | yes               |
+| Favorites, hidden items                            | `UserDefaults` → `favoriteApps`, `hiddenItemKeys`     | yes               |
+| User alias                                         | `UserDefaults` → `launcherAliases`                    | yes               |
+| Launch ranking                                     | `launcher-ranking.json`                               | yes               |
 
 `ExtensionCatalog.safeName` maps an npm-style name onto one path segment, and is the **only** copy of
 that mapping — a second one that drifts orphans every file the first one wrote.

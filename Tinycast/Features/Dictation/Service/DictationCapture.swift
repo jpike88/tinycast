@@ -11,9 +11,10 @@ final class DictationCapture {
 
         var errorDescription: String? {
             switch self {
-            case .microphoneUnavailable: "No microphone is available."
-            case .microphoneDenied: "Allow Tinycast to use the microphone in System Settings."
-            case .captureUnavailable: "Couldn't start recording from this microphone."
+            case .microphoneUnavailable: String(localized: "No microphone is available.")
+            case .microphoneDenied:
+                String(localized: "Allow Tinycast to use the microphone in System Settings.")
+            case .captureUnavailable: String(localized: "Couldn't start recording from this microphone.")
             }
         }
     }
@@ -93,6 +94,11 @@ final class DictationCapture {
         collector = nil
         return samples
     }
+
+    func snapshot() -> [Float] {
+        guard session != nil else { return [] }
+        return collector?.snapshot() ?? []
+    }
 }
 
 // Configuration stays on main; only start/stop run off-main, in sequence.
@@ -159,4 +165,6 @@ private final class AudioCollector: NSObject, AVCaptureAudioDataOutputSampleBuff
     }
 
     func finish() -> [Float] { queue.sync { samples } }
+
+    func snapshot() -> [Float] { queue.sync { samples } }
 }

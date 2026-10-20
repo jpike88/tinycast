@@ -46,8 +46,10 @@ final class HotKeyManager {
             guard recordingAction != oldValue else { return }
             let recording = recordingAction != nil
             if recording, dictationEnabled, dictationHoldToTalk { onDictationCancelled?() }
+            if recording { secureInputPressedActions.removeAll(keepingCapacity: true) }
             center.isPaused = recording
             modifierTapMonitor.isPaused = recording
+            if secureInputEquivalentsIncludeShift != nil { syncSecureInputEquivalents() }
             if let recordingAction {
                 capture.start(action: recordingAction, hotKeys: self)
             } else {
@@ -57,15 +59,22 @@ final class HotKeyManager {
     }
 
     let modifierTapMonitor = ModifierTapMonitor()
-    /// Live state of the open recorder, read by its callout.
     let capture = ShortcutCaptureSession()
 
+    private let defaults: UserDefaults
     private let center = HotKeyCenter()
     private var modifierTaps: [HotKeyBinding: HotKeyAction] = [:]
-    /// Every binding, loaded once in `start()` and written through on change.
+    /// Include Shift for the chord whose combos also answer to ⌃+key; nil when none should.
+    private var secureInputEquivalentsIncludeShift: Bool?
+    private var secureInputEquivalentIDs: [String] = []
+    private var secureInputReplacedActions: [HotKeyAction] = []
+    private var secureInputPressedActions: [String: HotKeyAction] = [:]
+    private var secureInputHint: KeyShortcut?
+    private static let secureInputHintID = "secureInputHint"
     private var bindings: [HotKeyAction: HotKeyBinding] = [:]
     /// Part of `AppIndex`'s cache key: a bound entry leaves the launcher's Suggestions.
     private(set) var revision = 0
+    var bindsDictationKey: Bool { bindings.values.contains { $0.shortcut?.isDictationKey == true } }
     @ObservationIgnored private var candidateActionsCache: [HotKeyAction]?
     // Reused: the startup load decodes once per candidate action.
     private let decoder = JSONDecoder()
@@ -81,6 +90,10 @@ final class HotKeyManager {
     private let boundAppleShortcutKey = "boundAppleShortcutIDs"
     private let boundSnippetKey = "boundSnippetIDs"
     private let boundExtensionCommandKey = "boundExtensionCommandEntryIDs"
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     func start(
         customCommandIDs: Set<UUID>, quicklinkIDs: Set<UUID>, windowLayoutIDs: Set<UUID>,
@@ -114,23 +127,21 @@ final class HotKeyManager {
 
     /// Never pruned at launch: not-installed-yet and gone are indistinguishable there.
     var boundExtensionCommandEntryIDs: [String] {
-        UserDefaults.standard.stringArray(forKey: boundExtensionCommandKey) ?? []
+        defaults.stringArray(forKey: boundExtensionCommandKey) ?? []
     }
 
     /// Bundle IDs holding a per-app hotkey, so `start()` knows which records to load.
     var boundBundleIDs: [String] {
-        UserDefaults.standard.stringArray(forKey: boundKey) ?? []
+        defaults.stringArray(forKey: boundKey) ?? []
     }
 
-    /// Settings-pane bundle IDs with a hotkey — same role as `boundBundleIDs`, own namespace.
     var boundPaneBundleIDs: [String] {
-        UserDefaults.standard.stringArray(forKey: boundPaneKey) ?? []
+        defaults.stringArray(forKey: boundPaneKey) ?? []
     }
 
     /// Custom-command UUIDs with a binding, indexed separately so startup can re-register them.
     var boundCustomCommandIDs: [UUID] { boundIDs(key: boundCustomCommandKey) }
 
-    /// Quicklink UUIDs with a binding — the same index, its own namespace.
     var boundQuicklinkIDs: [UUID] { boundIDs(key: boundQuicklinkKey) }
 
     /// Window-layout UUIDs with a binding; authored records, so they need an index of their own.
@@ -147,7 +158,7 @@ final class HotKeyManager {
 
     /// Swept by `removeSnippetBindings` on each load, never at launch: the store may be off.
     var boundSnippetIDs: [StoredSnippet.ID] {
-        UserDefaults.standard.stringArray(forKey: boundSnippetKey) ?? []
+        defaults.stringArray(forKey: boundSnippetKey) ?? []
     }
 
     /// A deleted app takes its Settings row with it, so nothing else could ever clear its binding.
@@ -171,27 +182,26 @@ final class HotKeyManager {
     func binding(for action: HotKeyAction) -> HotKeyBinding? { bindings[action] }
 
     private func storedBinding(for action: HotKeyAction) -> HotKeyBinding? {
-        // The stored value is a JSON string; anything else reads as unbound.
         guard
-            let json = UserDefaults.standard.string(forKey: action.defaultsKey),
+            let json = defaults.string(forKey: action.defaultsKey),
             let data = json.data(using: .utf8)
         else { return nil }
         return try? decoder.decode(HotKeyBinding.self, from: data)
     }
 
-    /// Persists or clears the binding and swaps live registration.
     func setBinding(_ binding: HotKeyBinding?, for action: HotKeyAction) {
         if action == .dictation, binding != self.binding(for: action) { onDictationCancelled?() }
         let previous = bindings[action]
+        clearSecureInputEquivalents()
         if let binding,
             let data = try? encoder.encode(binding),
             let json = String(data: data, encoding: .utf8)
         {
             bindings[action] = binding
-            UserDefaults.standard.set(json, forKey: action.defaultsKey)
+            defaults.set(json, forKey: action.defaultsKey)
         } else {
             bindings[action] = nil
-            UserDefaults.standard.removeObject(forKey: action.defaultsKey)
+            defaults.removeObject(forKey: action.defaultsKey)
         }
         revision &+= 1
         // Unregister unconditionally: the previous binding may have been a combo.
@@ -229,6 +239,73 @@ final class HotKeyManager {
         if previous?.usesModifierTapMonitor == true || binding?.usesModifierTapMonitor == true {
             syncModifierTaps()
         }
+        if secureInputEquivalentsIncludeShift != nil { syncSecureInputEquivalents() }
+    }
+
+    // MARK: - Secure Input
+
+    /// Secure Input hides the Hyper chord from every tap, so its combos also register with ⌃.
+    func setSecureInputEquivalents(includesShift: Bool?) {
+        guard includesShift != secureInputEquivalentsIncludeShift else { return }
+        secureInputEquivalentsIncludeShift = includesShift
+        syncSecureInputEquivalents()
+    }
+
+    func setSecureInputHint(_ shortcut: KeyShortcut?, onPress: @escaping () -> Void) {
+        guard shortcut != secureInputHint else { return }
+        secureInputHint = shortcut
+        center.unregister(id: Self.secureInputHintID)
+        guard let shortcut else { return }
+        center.register(id: Self.secureInputHintID, shortcut: shortcut, onKeyDown: { _ in onPress() })
+    }
+
+    /// Rebuilt wholesale, like the modifier-tap map, so an equivalent cannot outlive its binding.
+    private func syncSecureInputEquivalents() {
+        clearSecureInputEquivalents()
+        guard let includesShift = secureInputEquivalentsIncludeShift else { return }
+        let chord = KeyShortcut.hyperChord(includesShift: includesShift)
+        let actions = candidateActions
+        let originalActions = actions.reduce(into: [KeyShortcut: HotKeyAction]()) { result, action in
+            if let shortcut = binding(for: action)?.shortcut { result[shortcut] = action }
+        }
+        for action in actions {
+            guard let equivalent = binding(for: action)?.shortcut?.secureInputEquivalent(of: chord)
+            else { continue }
+            let original = originalActions[equivalent]
+            if let original {
+                center.unregister(id: original.defaultsKey)
+                secureInputReplacedActions.append(original)
+            }
+            let id = "secureInputEquivalent." + action.defaultsKey
+            var isPressed = false
+            center.register(
+                id: id, shortcut: equivalent,
+                onKeyDown: { [weak self] flags in
+                    guard let self else { return }
+                    if !isPressed {
+                        isPressed = true
+                        secureInputPressedActions[id] =
+                            ModifierKey.rightControl.isHeld(in: flags) ? action : original
+                    }
+                    if let selected = secureInputPressedActions[id] { perform(selected) }
+                },
+                onKeyUp: { [weak self] in
+                    isPressed = false
+                    if self?.secureInputPressedActions.removeValue(forKey: id) == .dictation {
+                        self?.onDictationReleased?()
+                    }
+                })
+            secureInputEquivalentIDs.append(id)
+        }
+    }
+
+    private func clearSecureInputEquivalents() {
+        if secureInputPressedActions.values.contains(.dictation) { onDictationCancelled?() }
+        secureInputPressedActions.removeAll(keepingCapacity: true)
+        secureInputEquivalentIDs.forEach { center.unregister(id: $0) }
+        secureInputEquivalentIDs.removeAll(keepingCapacity: true)
+        secureInputReplacedActions.forEach(register)
+        secureInputReplacedActions.removeAll(keepingCapacity: true)
     }
 
     /// Include Shift redefines the chord, and a stored combo has the old one baked in.
@@ -283,35 +360,35 @@ final class HotKeyManager {
     private func displayName(of action: HotKeyAction) -> String {
         switch action {
         case .togglePalette:
-            return "App Launcher"
+            return String(localized: "App Launcher")
         case .dictation:
-            return "Dictation"
+            return String(localized: "Dictation")
         case .command(let id):
             return id.name
         case .app(let bundleID), .settingsPane(let bundleID):
             return displayName?(action) ?? bundleID
         case .customCommand:
-            return displayName?(action) ?? "Custom Command"
+            return displayName?(action) ?? String(localized: "Custom Command")
         case .systemAction(let id):
             return SystemActionCatalog.action(id: id).name
         case .windowCommand(let id):
-            return WindowCommandCatalog.command(id: id)?.name ?? "Window Command"
+            return WindowCommandCatalog.command(id: id)?.name ?? String(localized: "Window Command")
         case .windowLayout:
-            return displayName?(action) ?? "Window Layout"
+            return displayName?(action) ?? String(localized: "Window Layout")
         case .windowRoom:
-            return displayName?(action) ?? "Room"
+            return displayName?(action) ?? String(localized: "Room")
         case .customWindowSize:
-            return displayName?(action) ?? "Custom Size"
+            return displayName?(action) ?? String(localized: "Custom Size")
         case .quicklink:
-            return displayName?(action) ?? "Quicklink"
+            return displayName?(action) ?? String(localized: "Quicklink")
         case .quickAction:
-            return displayName?(action) ?? "Quick Action"
+            return displayName?(action) ?? String(localized: "Quick Action")
         case .appleShortcut:
-            return displayName?(action) ?? "Apple Shortcut"
+            return displayName?(action) ?? String(localized: "Apple Shortcut")
         case .snippet:
-            return displayName?(action) ?? "Snippet"
+            return displayName?(action) ?? String(localized: "Snippet")
         case .extensionCommand:
-            return displayName?(action) ?? "Extension Command"
+            return displayName?(action) ?? String(localized: "Extension Command")
         }
     }
 
@@ -320,7 +397,7 @@ final class HotKeyManager {
         guard let shortcut = binding(for: action)?.shortcut else { return }
         center.register(
             id: action.defaultsKey, shortcut: shortcut,
-            onKeyDown: { [weak self] in self?.perform(action) },
+            onKeyDown: { [weak self] _ in self?.perform(action) },
             onKeyUp: action == .dictation ? { [weak self] in self?.onDictationReleased?() } : nil)
     }
 
@@ -370,7 +447,7 @@ final class HotKeyManager {
     // MARK: - UUID-keyed indexes
 
     private func boundIDs(key: String) -> [UUID] {
-        (UserDefaults.standard.stringArray(forKey: key) ?? []).compactMap(UUID.init(uuidString:))
+        (defaults.stringArray(forKey: key) ?? []).compactMap(UUID.init(uuidString:))
     }
 
     private func index(_ id: UUID, bound: Bool, key: String) {
@@ -380,21 +457,21 @@ final class HotKeyManager {
     }
 
     private func index(_ id: String, bound: Bool, key: String) {
-        var set = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        var set = Set(defaults.stringArray(forKey: key) ?? [])
         if bound { set.insert(id) } else { set.remove(id) }
-        UserDefaults.standard.set(Array(set), forKey: key)
+        defaults.set(Array(set), forKey: key)
     }
 
     /// Drops bindings whose item is gone, deleted while Tinycast wasn't running.
     private func prune(key: String, live: Set<UUID>, action: (UUID) -> HotKeyAction) {
         let stored = Set(boundIDs(key: key))
         for id in stored.subtracting(live) {
-            UserDefaults.standard.removeObject(forKey: action(id).defaultsKey)
+            defaults.removeObject(forKey: action(id).defaultsKey)
         }
         persist(stored.intersection(live), key: key)
     }
 
     private func persist(_ ids: Set<UUID>, key: String) {
-        UserDefaults.standard.set(ids.map { $0.uuidString.lowercased() }.sorted(), forKey: key)
+        defaults.set(ids.map { $0.uuidString.lowercased() }.sorted(), forKey: key)
     }
 }

@@ -39,6 +39,9 @@ final class AISettingsStore {
     var webSearchEnabled: Bool {
         didSet { defaults.set(webSearchEnabled, forKey: AppSettingsKey.aiWebSearch.rawValue) }
     }
+    var choicesEnabled: Bool {
+        didSet { defaults.set(choicesEnabled, forKey: AppSettingsKey.aiChoices.rawValue) }
+    }
     /// Off by default, never backed up: arming a shell is a consent this Mac grants in person.
     var bashToolEnabled: Bool {
         didSet { defaults.set(bashToolEnabled, forKey: AppSettingsKey.aiBashToolEnabled.rawValue) }
@@ -132,6 +135,8 @@ final class AISettingsStore {
         defaultModels = Self.decodeDefaultModels(defaults)
         webSearchEnabled =
             defaults.object(forKey: AppSettingsKey.aiWebSearch.rawValue) as? Bool ?? false
+        choicesEnabled =
+            defaults.object(forKey: AppSettingsKey.aiChoices.rawValue) as? Bool ?? true
         bashToolEnabled =
             defaults.object(forKey: AppSettingsKey.aiBashToolEnabled.rawValue) as? Bool ?? false
         bashTrust =

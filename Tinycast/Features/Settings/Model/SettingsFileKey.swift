@@ -10,6 +10,7 @@ enum SettingsFileKey: String, CaseIterable, Sendable {
     case escapeKeyBehavior = "general.escapeKeyBehavior"
     case autoSwitchInputSource = "general.autoSwitchInputSource"
     case supportReminders = "general.supportReminders"
+    case language = "general.language"
     case appearance = "appearance.theme"
     case interfaceSize = "appearance.interfaceSize"
     case compactMode = "appearance.compactMode"
@@ -19,6 +20,7 @@ enum SettingsFileKey: String, CaseIterable, Sendable {
     case hyperKey = "hyperKey.key"
     case hyperKeyIncludesShift = "hyperKey.includesShift"
     case hyperKeyQuickPress = "hyperKey.quickPress"
+    case hyperKeySecureInputCompatibility = "hyperKey.secureInputCompatibility"
     case calcNumberStyle = "calculator.numberStyle"
     case launcherShowsSuggestions = "search.showsSuggestions"
     case rootSearchSensitivity = "search.sensitivity"
@@ -36,12 +38,13 @@ enum SettingsFileKey: String, CaseIterable, Sendable {
     case quicklinksEnabled = "quicklinks.enabled"
     case quicklinksShowInLauncher = "quicklinks.showInLauncher"
     case quicklinkOpensNewWindow = "quicklinks.opensNewWindow"
-    case quicklinkSelectionFallback = "quicklinks.selectionFallback"
+    case quicklinkPassesSelectedText = "quicklinks.passesSelectedText"
     case quicklinkConfirmsBeforeDelete = "quicklinks.confirmsBeforeDelete"
     case quicklinkCommands = "quicklinks.commands"
     case appleShortcutsEnabled = "appleShortcuts.enabled"
     case aiEnabled = "ai.enabled"
     case aiWebSearch = "ai.webSearch"
+    case aiChoices = "ai.choices"
     case aiSystemPrompt = "ai.systemPrompt"
     case aiSystemPromptEnabled = "ai.systemPromptEnabled"
     case aiRetention = "ai.retentionDays"
@@ -58,11 +61,14 @@ enum SettingsFileKey: String, CaseIterable, Sendable {
     case dictationMicrophone = "dictation.microphone"
     case dictationDestination = "dictation.destination"
     case dictationAdaptsCapitalization = "dictation.adaptsCapitalization"
+    case dictationLiveInsertion = "dictation.liveInsertion"
     case dictationIdleRelease = "dictation.releaseAfterMinutes"
     case dictationLanguage = "dictation.language"
     case fileSearchEnabled = "fileSearch.enabled"
     case fileSearchScopes = "fileSearch.scopes"
     case fileSearchIgnorePatterns = "fileSearch.ignorePatterns"
+    case fileSearchRemovedDefaultPatterns = "fileSearch.removedDefaultPatterns"
+    case fileSearchShowInLauncher = "fileSearch.showInLauncher"
     case fileSearchCommands = "fileSearch.commands"
     case notesEnabled = "notes.enabled"
     case notesRendersMarkdown = "notes.rendersMarkdown"
@@ -111,10 +117,8 @@ enum SettingsFileKey: String, CaseIterable, Sendable {
     case calendarCommands = "calendar.commands"
     case extensionsShowInLauncher = "extensions.showInLauncher"
 
-    /// The top-level object the key sits in.
     var section: String { String(rawValue.prefix { $0 != "." }) }
 
-    /// The key's name inside its section.
     var name: String { String(rawValue.drop { $0 != "." }.dropFirst()) }
 
     /// Every section, in file order.

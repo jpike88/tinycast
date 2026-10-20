@@ -1,15 +1,16 @@
-// Meeting links, the join and menu-bar windows, auto-join, drafts, day groups and span.
 import Foundation
 
 @main
 @MainActor
 struct CalendarTests {
+    static let locale = Locale(identifier: "en_US")
     static var failures = 0
     static var passes = 0
 
     /// Injected everywhere a date is built, so no assertion depends on the machine's zone.
     static let calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
         calendar.timeZone = TimeZone(identifier: "UTC")!
         return calendar
     }()
@@ -38,6 +39,7 @@ struct CalendarTests {
         autoJoinRespectsArming()
         autoJoinSkipsBareLinks()
         eventDrafts()
+        eventEditor()
         meetingDetails()
 
         print("\(passes)/\(passes + failures) passed")
@@ -120,6 +122,10 @@ struct CalendarTests {
             MeetingLink.detect(in: "line one\nhttps://whereby.com/acme\nline three")?.url
                 .absoluteString == "https://whereby.com/acme",
             "a newline ends the URL")
+        expect(
+            MeetingLink.detect(in: "line one\r\nhttps://whereby.com/acme\r\nline three")?.url
+                .absoluteString == "https://whereby.com/acme",
+            "a CRLF line break ends the URL")
         expect(
             MeetingLink.detect(in: "HTTPS://WHEREBY.COM/Acme")?.provider == .whereby,
             "the scheme and host match case-insensitively")
@@ -282,7 +288,8 @@ struct CalendarTests {
         let meeting = event(id: "review", starting: start, minutes: 30)
         func pill(_ offset: TimeInterval) -> UpcomingWindow.RowPill? {
             UpcomingWindow.rowPill(
-                for: meeting, now: start.addingTimeInterval(offset), calendar: calendar)
+                for: meeting, now: start.addingTimeInterval(offset), calendar: calendar,
+                locale: locale)
         }
         expect(
             pill(-60 * 60) == .init(text: "in 60 min", isImminent: true),
@@ -302,39 +309,55 @@ struct CalendarTests {
         let lateNight = date(year: 2026, month: 9, day: 23, hour: 23, minute: 30)
         let pastMidnight = event(id: "late", starting: lateNight.addingTimeInterval(40 * 60))
         expect(
-            UpcomingWindow.rowPill(for: pastMidnight, now: lateNight, calendar: calendar)?.text
+            UpcomingWindow.rowPill(
+                for: pastMidnight, now: lateNight, calendar: calendar, locale: locale)?.text
                 == "in 40 min",
             "a meeting just past midnight still counts down")
     }
 
     static func countdownStrings() {
         let start = at(60)
+        let french = Locale(identifier: "fr_FR")
         expect(
-            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(-240)) == "in 4 min",
+            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(-240), locale: french)
+                == "in 4\u{00a0}min",
+            "the supplied locale controls countdown units")
+        expect(
+            EventDraft.label(duration: 60, locale: french) == "1\u{202f}h",
+            "the supplied locale controls event duration units")
+        expect(
+            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(-240), locale: locale)
+                == "in 4 min",
             "four minutes out reads as in 4 min")
         expect(
-            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(-60)) == "in 1 min",
+            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(-60), locale: locale)
+                == "in 1 min",
             "one minute out reads as in 1 min")
         expect(
-            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(-1)) == "in 1 min",
+            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(-1), locale: locale)
+                == "in 1 min",
             "a partial minute rounds up rather than reading as now")
-        expect(UpcomingWindow.countdown(to: start, now: start) == "Now", "the start reads as Now")
         expect(
-            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(299)) == "Now",
+            UpcomingWindow.countdown(to: start, now: start, locale: locale) == "Now", "the start reads as Now"
+        )
+        expect(
+            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(299), locale: locale) == "Now",
             "the first five minutes after the start still read as Now")
         expect(
-            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(301)) == "Now",
+            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(301), locale: locale) == "Now",
             "a started event stays Now outside the menu-bar-specific timer")
         expect(
-            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(-619 * 60)) == "in 10 hr",
+            UpcomingWindow.countdown(to: start, now: start.addingTimeInterval(-619 * 60), locale: locale)
+                == "in 10 hr",
             "a long wait rounds to hours")
 
         let meeting = event(id: "standup", start: 60, minutes: 30)
         expect(
-            UpcomingWindow.menuBarCountdown(for: meeting, now: start.addingTimeInterval(299)) == "Now",
+            UpcomingWindow.menuBarCountdown(for: meeting, now: start.addingTimeInterval(299), locale: locale)
+                == "Now",
             "the menu bar says Now during the first five minutes")
         expect(
-            UpcomingWindow.menuBarCountdown(for: meeting, now: start.addingTimeInterval(301))
+            UpcomingWindow.menuBarCountdown(for: meeting, now: start.addingTimeInterval(301), locale: locale)
                 == "24 min left",
             "the menu bar switches to time left after five minutes")
     }
@@ -562,10 +585,40 @@ struct CalendarTests {
         expect(draft.start(from: now) == at(30), "an offset pushes the start out")
         expect(draft.end(from: now) == at(90), "and the duration runs from there")
 
-        expect(EventDraft.label(startOffset: 0) == "Now", "a zero offset reads as Now")
-        expect(EventDraft.label(startOffset: 15) == "15 min", "a smaller offset reads in minutes")
-        expect(EventDraft.label(duration: 45) == "45 min", "so does a sub-hour duration")
-        expect(EventDraft.label(duration: 60) == "1 hr", "an hour reads as an hour")
+        expect(EventDraft.label(startOffset: 0, locale: locale) == "Now", "a zero offset reads as Now")
+        expect(
+            EventDraft.label(startOffset: 15, locale: locale) == "15 min", "a smaller offset reads in minutes"
+        )
+        expect(EventDraft.label(duration: 45, locale: locale) == "45 min", "so does a sub-hour duration")
+        expect(EventDraft.label(duration: 60, locale: locale) == "1 hr", "an hour reads as an hour")
+    }
+
+    static func eventEditor() {
+        let editor = EventEditorSession()
+        expect(!editor.draft.isValid, "the event editor opens with an invalid blank title")
+        expect(editor.draft.startOffsetMinutes == 0, "new events still start now")
+        expect(editor.draft.durationMinutes == 30, "new events still last thirty minutes")
+        expect(editor.focusedField == .title, "the title takes initial focus")
+        editor.advanceFocus(backwards: false)
+        expect(editor.focusedField == .start, "Tab reaches the start choice")
+        editor.advanceFocus(backwards: false)
+        expect(editor.focusedField == .duration, "then reaches duration")
+        editor.advanceFocus(backwards: false)
+        expect(editor.focusedField == .title, "Tab wraps without leaving the form")
+        editor.advanceFocus(backwards: true)
+        expect(editor.focusedField == .duration, "Shift-Tab wraps backwards")
+        editor.advanceFocus(backwards: true)
+        expect(editor.focusedField == .start, "Shift-Tab returns to start")
+        editor.advanceFocus(backwards: true)
+        expect(editor.focusedField == .title, "then returns to title")
+        editor.draft.title = " \n "
+        expect(!editor.draft.isValid, "a whitespace-only editor cannot create an event")
+        editor.draft.title = "  Réunion 🎉  "
+        editor.draft.startOffsetMinutes = 15
+        editor.draft.durationMinutes = 45
+        expect(editor.draft.trimmedTitle == "Réunion 🎉", "the editor preserves Unicode titles")
+        expect(editor.draft.start(from: at(10)) == at(25), "start is relative to saving, not opening")
+        expect(editor.draft.end(from: at(10)) == at(70), "duration starts at the selected offset")
     }
 
     // MARK: - Meeting details
@@ -657,10 +710,11 @@ struct CalendarTests {
                 == DateInterval(start: midnight, end: date(year: 2026, month: 8, day: 30, hour: 0)),
             "the week runs seven days from the same start, today included")
         expect(
-            MeetingSpan.today.possessivePhrase == "today's"
-                && MeetingSpan.todayAndTomorrow.orPhrase == "today or tomorrow"
-                && MeetingSpan.nextSevenDays.possessivePhrase == "the next 7 days'"
-                && MeetingSpan.nextSevenDays.orPhrase == "in the next 7 days",
+            MeetingSpan.today.nothingScheduledMessage == "Nothing scheduled today"
+                && MeetingSpan.todayAndTomorrow.nothingScheduledMessage
+                    == "Nothing scheduled today or tomorrow"
+                && MeetingSpan.nextSevenDays.nothingScheduledMessage
+                    == "Nothing scheduled in the next 7 days",
             "the wording follows the span")
     }
 

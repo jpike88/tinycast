@@ -67,10 +67,26 @@ compilation of its 2-bit weights; Ultra's encoder and both variants' decoder/joi
 - Audio stays in memory, bounded to five minutes of mono 16 kHz Float32 samples. Pipes carry
   bounded JSON control messages and binary audio; recordings are never written to disk or sent
   over the network. Long recordings split near a quiet passage without overlapping samples.
+- Live insertion is off by default and flushes at speech pauses, or after eight seconds of
+  unpaused speech at the latest. While recording, the coordinator transcribes the audio since the
+  last flush and pastes each chunk through `TextInjector` in order; finishing lets queued chunks
+  land, then transcribes only the remainder. A cancelled chunk keeps its audio behind for that
+  final pass, and a copy destination receives the assembled text. Chunk cuts fall near a
+  quiet passage, like long recordings do, and copy-only sessions never start the live loop.
+- Every flush re-transcribes from a pause-anchored overlap start and drops the repeated head
+  word-wise, tolerating fragment words and case or punctuation variants, so word splits at
+  chunk cuts rarely duplicate. When the app exposes no caret, spacing and casing fall back to
+  the already pasted text instead of gluing chunks together. A chunk that fails to paste is
+  reported once at finish, never silently lost. Pasted text is never revised: matching Siri-style
+  correction would mean deleting and retyping inside foreign apps, which is fragile next to a
+  moving cursor and the user's own edits.
 - Model files download through a feature-private ephemeral session without a disk URL cache.
   Repositories and revisions are explicit in `DictationModel`; each download is staged and
   published only when all required files arrive, their sizes agree with the manifest and large-file
-  SHA-256 checksums match. Settings shows combined byte progress for the selected model; switching
+  SHA-256 checksums match. Settings shows combined byte counts and a percentage in a full-width
+  progress row for the selected model. Download delegate callbacks report actual transferred bytes,
+  with intermediate updates limited to one per 100 ms per file; each verified file reports its final
+  count immediately. Progress observation stays in the download row. Switching
   selection leaves its download running in the background. Cancellation and
   normal quit remove staging files without publishing a partial model. A new download removes stale
   staging directories left by a crash or forced quit, without touching installed models or other files.
@@ -92,15 +108,15 @@ with synthetic capture and real AppKit editors, without recording audio or touch
 `dictation-test` checks formatting and model options; `dictation-inference-test` checks score selection,
 byte BPE, Fourier/mel features, listening bands and audio partitioning without downloading a model. `dictation-worker-test`
 exercises framed IPC, worker reuse/switching, removal, cancellation and broken pipes with a fixture.
-An in-process URLProtocol fixture checks combined byte progress and atomic installation for both
-families, including cancellation, stale staging cleanup and competing downloads on shared or
-independent cache roots, without sockets or timed waits.
+An in-process URLProtocol fixture checks byte progress before the first file completes, combined
+progress and atomic installation for both families, including cancellation, stale staging cleanup
+and competing downloads on shared or independent cache roots, without sockets or timed waits.
 `dictation-volume-test` uses private files and injected audio controls to verify crash recovery
 before and after fade steps, user volume changes, output switching, failed writes and rapid cancellation,
 without changing the system volume or downloading a model.
 
 Also exercise all four real models, short and long recordings, downloads/removal, initial microphone
-grant and denial, hold/toggle shortcuts, Return/Escape, output destinations, surrounding text with
+grant and denial, hold/toggle shortcuts, Return/Escape, output destinations, live insertion on and off, surrounding text with
 capitalization adaptation on and off,
 model switching and idle release/reload. Check both processes in Activity Monitor, and validate
 Debug and Release helper names, signatures and architecture slices. Model conversions and their

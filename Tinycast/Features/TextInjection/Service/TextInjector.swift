@@ -118,6 +118,8 @@ final class TextInjector {
     /// A paste is still in flight, or we still hold the pasteboard it borrowed.
     var isDelivering: Bool { !deliveryQueue.isIdle || activePasteboardLease != nil }
 
+    func drain() async { await deliveryQueue.drain() }
+
     func prepareInteractiveExpansion(target: InjectionTarget?) -> Bool {
         if let editor = target?.ownEditor { return editor.isEditable }
         guard targetAcceptsInjection(target?.externalApp), Permissions.ensureAccessibility() else {
@@ -235,9 +237,17 @@ final class TextInjector {
     func copySelection(
         from targetApp: NSRunningApplication?, pasteboard: any PasteboardAccess
     ) async -> String? {
-        clipboardManager.prepareForTinycastPasteboardMutation()
-        guard let original = PasteboardSnapshot(pasteboard: pasteboard) else { return nil }
-        defer { restore(original, to: pasteboard) }
+        // A second borrow would snapshot the first's copy and read its restore as a selection.
+        guard !isBorrowingCopy, let original = PasteboardSnapshot(pasteboard: pasteboard) else {
+            return nil
+        }
+        isBorrowingCopy = true
+        clipboardManager.pauseCapture()
+        defer {
+            restore(original, to: pasteboard)
+            clipboardManager.resumeCapture()
+            isBorrowingCopy = false
+        }
 
         Paster.postCommandC(toPid: targetApp?.processIdentifier)
         for _ in 0..<Self.copyPollAttempts {
@@ -258,6 +268,8 @@ final class TextInjector {
         clipboardManager.synchronizeAfterTinycastPasteboardMutation(
             changeCount: pasteboard.changeCount)
     }
+
+    private var isBorrowingCopy = false
 
     /// A copy lands well inside a second; past that the app was never going to answer.
     private static let copyPollAttempts = 40

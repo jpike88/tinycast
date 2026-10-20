@@ -59,6 +59,7 @@ struct DoubleTapDetectorTests {
         layoutCharacters()
         hyperChord()
         hyperRetargeting()
+        secureInputEquivalents()
         hyperModifierIsolation()
         recorderKeycaps()
         spelling()
@@ -335,6 +336,9 @@ struct DoubleTapDetectorTests {
 
     static func commandActions() {
         expect(
+            CommandID.createCustomCommand.englishName == "Create Custom Command",
+            "launcher search keeps the explicit English command name")
+        expect(
             HotKeyAction.systemAction(id: .toggleMicrophoneMute).defaultsKey
                 == "hotkey.systemAction.toggle-microphone-mute",
             "microphone mute persists under its own global hotkey key")
@@ -380,7 +384,6 @@ struct DoubleTapDetectorTests {
 
     // MARK: - The Hyper chord
 
-    /// A combo on the G key, spelled in Carbon like the on-disk shape.
     private static func combo(_ flags: NSEvent.ModifierFlags) -> KeyShortcut {
         KeyShortcut(
             carbonKeyCode: kVK_ANSI_G, carbonModifiers: KeyShortcut.carbonModifiers(from: flags))
@@ -494,6 +497,23 @@ struct DoubleTapDetectorTests {
         }
     }
 
+    static func secureInputEquivalents() {
+        for includesShift in [false, true] {
+            let chord = KeyShortcut.hyperChord(includesShift: includesShift)
+            let context = "Include Shift \(includesShift)"
+            expect(
+                combo(chord).secureInputEquivalent(of: chord) == combo(.control),
+                "\(context): a Hyper combo answers to ⌃ plus its key inside Secure Input")
+            expect(
+                combo([.control, .command]).secureInputEquivalent(of: chord) == nil,
+                "\(context): a combo short of the chord gets no equivalent")
+        }
+        let narrow = KeyShortcut.hyperChord(includesShift: false)
+        expect(
+            combo(narrow.union(.shift)).secureInputEquivalent(of: narrow) == combo([.control, .shift]),
+            "a modifier beyond the chord survives into the equivalent")
+    }
+
     static func hyperModifierIsolation() {
         let previousChord = KeyShortcut.displayedHyperChord
         defer { KeyShortcut.displayedHyperChord = previousChord }
@@ -504,7 +524,8 @@ struct DoubleTapDetectorTests {
             let leftBits: UInt64 = includesShift ? 0x2B : 0x29
             let residues: [(HyperKeyPhysicalKey, UInt64)] = [
                 (.capsLock, 0), (.rightControl, 0x2000), (.rightOption, 0x40),
-                (.rightCommand, 0x10), (.rightShift, includesShift ? 0x4 : 0)
+                (.rightCommand, 0x10), (.rightShift, includesShift ? 0x4 : 0),
+                (.leftControl, 0), (.leftOption, 0), (.leftCommand, 0), (.leftShift, 0)
             ]
             for (physicalKey, residue) in residues {
                 let flags = NSEvent.ModifierFlags(rawValue: chord.rawValue | UInt(leftBits | residue))

@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The window's right-hand side: the open conversation, and its composer beneath it.
 struct AIChatDetailView: View {
     @Environment(AIChatCoordinator.self) private var coordinator
     @Environment(ChatFindState.self) private var find
@@ -12,8 +11,8 @@ struct AIChatDetailView: View {
 
     /// The last reply's options, once it has finished; typing or sending moves past them.
     private var suggestions: [String] {
-        guard !chat.isStreaming, let last = chat.session.messages.last, last.role == .assistant,
-            last.state == .complete
+        guard coordinator.aiSettings.choicesEnabled, !chat.isStreaming,
+            let last = chat.session.messages.last, last.role == .assistant, last.state == .complete
         else { return [] }
         return ChatChoices.split(last.text).choices
     }
@@ -119,7 +118,6 @@ struct AIChatDetailView: View {
     }
 }
 
-/// Staged files, the text, then the chat's options and Send, on one pane of Liquid Glass.
 private struct AIChatComposer: View {
     let chat: AIChatState
     let coordinator: AIChatCoordinator
@@ -241,7 +239,6 @@ private struct AIChatComposer: View {
         .accessibilityLabel(chat.isStreaming ? "Stop Response" : "Send")
     }
 
-    /// Return and the button are one action: Send, or Stop while a reply streams.
     private func submit() {
         if chat.isStreaming {
             coordinator.stopResponse(in: chat)
@@ -251,7 +248,6 @@ private struct AIChatComposer: View {
     }
 }
 
-/// A composer control's face: one glyph slot, the callout title, then the menu's chevron.
 private struct ComposerControlLabel<Icon: View>: View {
     var title: String?
     var showsChevron = true
@@ -356,10 +352,10 @@ private struct AIAddMenu: View {
     private var attachHelp: String {
         let can = coordinator.capabilities(for: chat)
         switch (can.images, can.documents) {
-        case (true, true): return "Attach images, PDFs or text files"
-        case (true, false): return "Attach images or text files"
-        case (false, true): return "Attach PDFs or text files"
-        case (false, false): return "Attach text files"
+        case (true, true): return String(localized: "Attach images, PDFs or text files")
+        case (true, false): return String(localized: "Attach images or text files")
+        case (false, true): return String(localized: "Attach PDFs or text files")
+        case (false, false): return String(localized: "Attach text files")
         }
     }
 }
@@ -400,13 +396,15 @@ private struct DictationButton: View {
     }
 
     private func help(_ session: DictationField?) -> String {
-        guard dictation.hasModel else { return "Download a dictation model in Settings" }
-        guard let session else { return "Dictate" }
-        return session.isTranscribing ? "Transcribing…" : "Stop and insert the text  ↵"
+        guard dictation.hasModel else {
+            return String(localized: "Download a dictation model in Settings")
+        }
+        guard let session else { return String(localized: "Dictate") }
+        return session.isTranscribing
+            ? String(localized: "Transcribing…") : String(localized: "Stop and insert the text  ↵")
     }
 }
 
-/// Web search is on beside the +; a click turns it off, the + menu turns it back on.
 private struct WebSearchPill: View {
     let settings: AISettingsStore
     let isCompact: Bool
@@ -498,7 +496,8 @@ private struct AIReasoningPicker: View {
         } label: {
             // A word, not a glyph: beside the model's name it already reads as that model's setting.
             ComposerControlLabel(
-                title: efforts.isEmpty ? "Reasoning" : coordinator.selectedReasoningTitle(for: chat))
+                title: efforts.isEmpty
+                    ? String(localized: "Reasoning") : coordinator.selectedReasoningTitle(for: chat))
         }
         .composerMenu()
         .disabled(efforts.isEmpty)
@@ -585,7 +584,6 @@ private struct AIToolsMenu: View {
     }
 }
 
-/// Where find is in the open chat, with the same steps ⌘G and ⇧⌘G take.
 private struct FindCounter: View {
     let position: Int
     let count: Int
@@ -693,7 +691,7 @@ struct ContextCard: View {
             ProgressView(value: min(report.fill, 1))
                 .tint(report.tint)
             if report.historyBytes > report.budget {
-                Text("The oldest messages no longer fit and are left out.")
+                Text("The oldest messages are no longer sent to the model.")
                     .font(metrics.typography.rowTrailing)
                     .foregroundStyle(Theme.Colors.destructive)
             }
@@ -722,20 +720,31 @@ struct ContextCard: View {
                                 .currency(code: "USD").precision(.significantDigits(2))))
                     }
                 } else {
-                    row("Usage", "Not reported yet")
+                    row("Last reply", String(localized: "Not reported yet"))
                 }
                 section("Next message")
                 row("Model", report.modelTitle)
-                row("History", "\(bytes(report.historyBytes)) of \(bytes(report.budget))")
-                row("Messages", "\(report.sentMessages) of \(report.totalMessages)")
+                row(
+                    "History",
+                    String(localized: "\(bytes(report.historyBytes)) of \(bytes(report.budget))"))
+                row("Messages", String(localized: "\(report.sentMessages) of \(report.totalMessages)"))
                 if report.stagedFiles > 0 {
                     row("Attached", "\(report.stagedFiles) · \(bytes(report.stagedBytes))")
                 }
-                row("System prompt", report.systemPrompt ? "On" : "Off")
-                row("Web search", report.webSearch ? "On" : "Off")
+                row(
+                    "System prompt",
+                    report.systemPrompt
+                        ? String(localized: "ai-system-prompt-on", defaultValue: "On")
+                        : String(localized: "ai-system-prompt-off", defaultValue: "Off"))
+                row(
+                    "Web search",
+                    report.webSearch
+                        ? String(localized: "ai-web-search-on", defaultValue: "On")
+                        : String(localized: "ai-web-search-off", defaultValue: "Off"))
                 row(
                     "MCP servers",
-                    report.toolServers == 0 ? "None" : "\(report.toolServers) in reach")
+                    report.toolServers == 0
+                        ? String(localized: "None") : String(localized: "\(report.toolServers) in reach"))
             }
             .font(metrics.typography.rowTrailing)
         }
@@ -747,9 +756,9 @@ struct ContextCard: View {
         .shadow(color: Theme.Colors.tooltipShadow, radius: metrics.spacing.xl, y: metrics.spacing.xs)
     }
 
-    private func section(_ title: String) -> some View {
+    private func section(_ title: LocalizedStringResource) -> some View {
         GridRow {
-            Text(title.uppercased())
+            Text(String(localized: title).uppercased())
                 .font(metrics.typography.disclosure)
                 .foregroundStyle(.tertiary)
                 .gridCellColumns(2)
@@ -757,7 +766,7 @@ struct ContextCard: View {
         }
     }
 
-    private func row(_ label: String, _ value: String) -> some View {
+    private func row(_ label: LocalizedStringResource, _ value: String) -> some View {
         GridRow {
             Text(label).foregroundStyle(.secondary)
             Text(value).monospacedDigit().lineLimit(1).truncationMode(.middle)
@@ -775,7 +784,8 @@ struct ContextCard: View {
 
     private func tokens(_ count: Int, of window: Int?) -> String {
         guard let window else { return count.formatted() }
-        return "\(count.formatted()) of \(window.formatted(.number.notation(.compactName)))"
+        return String(
+            localized: "\(count.formatted()) of \(window.formatted(.number.notation(.compactName)))")
     }
 
     /// The meter rows: the session's spend spelled compactly beside a limit where one is known.
@@ -799,13 +809,13 @@ struct ContextCard: View {
     private func input(_ usage: AIUsage) -> String {
         let prompt = (usage.inputTokens ?? 0) + (usage.cachedInputTokens ?? 0)
         guard let cached = usage.cachedInputTokens, cached > 0 else { return prompt.formatted() }
-        return "\(prompt.formatted()) · \(cached.formatted()) cached"
+        return String(localized: "\(prompt.formatted()) · \(cached.formatted()) cached")
     }
 
     private func output(_ usage: AIUsage) -> String {
         let output = usage.outputTokens ?? 0
         guard let thinking = usage.reasoningTokens, thinking > 0 else { return output.formatted() }
-        return "\(output.formatted()) · \(thinking.formatted()) thinking"
+        return String(localized: "\(output.formatted()) · \(thinking.formatted()) thinking")
     }
 }
 

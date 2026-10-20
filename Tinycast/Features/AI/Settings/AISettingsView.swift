@@ -96,16 +96,16 @@ struct AISettingsView: View {
     }
 
     private var defaultModelFooter: String {
+        // Localized through the same literals the settings search index reads, so search honors them.
         let chosen = [settings.quickAIDefaultModel, settings.defaultModel]
         if chosen.allSatisfy({ $0?.isOnDevice == true && $0 != nil }) {
-            return "Apple Intelligence runs on this Mac. Nothing leaves it."
+            return String(localized: "Apple Intelligence runs on this Mac. Nothing leaves it.")
         }
         return chosen.contains { $0 == nil }
-            ? "Turn on Apple Intelligence, or add a provider above."
-            : "Only the selected provider is contacted."
+            ? String(localized: "Turn on Apple Intelligence, or add a provider above.")
+            : String(localized: "Only the selected provider is contacted.")
     }
 
-    /// Why the on-device route is missing from the picker, or `nil` when it is there.
     private var appleIntelligenceReason: String? {
         settings.isAppleIntelligenceAvailable() ? nil : AppleIntelligenceProvider.status().message
     }
@@ -119,9 +119,10 @@ struct AISettingsView: View {
         }
         if !settings.connections.isEmpty {
             let count = settings.connections.count
-            providers.append(count == 1 ? "1 API connection" : "\(count) API connections")
+            providers.append(String(localized: "\(count) API connections"))
         }
-        return providers.isEmpty ? "No external providers ready" : providers.joined(separator: ", ")
+        return providers.isEmpty
+            ? String(localized: "No external providers ready") : providers.joined(separator: ", ")
     }
 
     private func syncSelection() {
@@ -140,13 +141,19 @@ struct AISettingsView: View {
             if settings.webSearchEnabled {
                 WebSearchSettingsRow(settings: settings, core: core)
             }
+            Toggle(isOn: $settings.choicesEnabled) {
+                SettingsRowTitle(.aiChat, "Suggested replies")
+                Text("Next steps the model offers as buttons after a reply.")
+            }
             Picker(selection: $settings.toolRounds) {
                 ForEach(AIToolRounds.allCases) { Text($0.title).tag($0) }
             } label: {
                 SettingsRowTitle(.aiChat, "Tool call rounds")
                 Text(
-                    "A reply stops after this many; Unlimited runs until Stop. "
-                        + "API connections, Codex and Claude.")
+                    """
+                    A reply stops after this many; Unlimited runs until Stop. API connections, Codex \
+                    and Claude.
+                    """)
             }
             Toggle(
                 isOn: Binding(
@@ -206,7 +213,8 @@ struct AISettingsView: View {
             Picker(selection: $settings.opensTo) {
                 ForEach(AIOpensTo.allCases) { Text($0.title).tag($0) }
             } label: {
-                SettingsRowTitle(.aiConversations, "Quick AI opens to")
+                SettingsRowTitle(.aiConversations, "Opens to")
+                Text("What Quick AI and the AI Chat window show when you open them.")
             }
             if settings.opensTo == .recent {
                 Picker(selection: $settings.newChatAfter) {

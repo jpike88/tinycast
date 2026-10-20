@@ -37,13 +37,14 @@ Independently of the folder tree, every mature subsystem has converged on the sa
                                    │ consumed by
 ┌─ EFFECT ─────────────────────────▼─────────────────────────────────────────┐
 │ All platform I/O, one folder per feature.                                  │
-│ AppIndex · FileSearchService · SettingsPaneScanner ·                       │
+│ AppIndex · FileIndexer · SettingsPaneScanner ·                             │
 │ AXWindowAccess · AXScreens · WindowInventory · WindowLayoutRunner ·        │
 │ RoomWindowSweep · RoomRunner ·                                             │
 │ IconCache · WindowMover · UninstallScanner · UninstallRunner ·             │
 │ SystemActionRunner · QuicklinkLauncher · TextInjector ·             │
 │ SnippetKeywordListener · NotesRepository · CurrencyRateStore · Paster ·    │
-│ HotKeyCenter · HyperKeyTap · ModifierTapMonitor · RunningAppsMonitor ·     │
+│ HotKeyCenter · HyperKeyTap · KeyboardRemapper · ModifierTapMonitor ·       │
+│ SecureInputMonitor · RunningAppsMonitor ·                                  │
 │ CalendarStore · MeetingLauncher · MeetingClock · CameraSession ·           │
 │ SupportReminderStore · AXMenuAccess · WindowZOrder · WindowSwitchSweep ·   │
 │ AppleShortcutRunner · SettingsFileRepository · SettingsFileMonitor ·       │
@@ -92,7 +93,8 @@ app: the stores (`AppIndex`, `ClipboardStore`, `SnippetsStore`, `QuicklinkStore`
 `FavoritesStore`, `VisibilityStore`, `AliasStore`, `LauncherRankingStore`, `CalculatorHistoryStore`,
 `CurrencyRateStore`, `FrequentEmojiStore`, `CalendarStore`), the managers, monitors and clocks
 (`ClipboardManager`, the opt-in `ClipboardTextIndexer`, the opt-in `SettingsFileRepository`,
-`HotKeyManager`, `HyperKeyTap`, `RunningAppsMonitor`, `SnippetKeywordListener`), the shared state
+`HotKeyManager`, `HyperKeyManager`, `DictationKeyManager`, `RunningAppsMonitor`,
+`SnippetKeywordListener`), the shared state
 (`AppSettings`, `PaletteState`, `FileSearchSession`, `MenuSearchSession`, `UninstallSession`,
 `MeetingClock`), `NotesStore`, the twenty-one feature coordinators, and the
 window controllers.
@@ -115,7 +117,8 @@ Clipboard text recognition runs outside the process. `AppCore` owns the indexer;
 the stateless `ClipboardTextWorker` runs one bundled `ClipboardTextHelper` per item, from
 `Contents/Helpers`, and reaps it before returning. Vision's and PDFKit's allocations therefore belong
 to a process that exits, and the helper — which has no database, clipboard or settings access — is
-handed an input path and answers with bounded text down a pipe.
+handed an input path and answers with bounded text down a pipe. Its `thumbnail` mode writes the
+clipboard's downscaled image copies, so a full-size decode stays out of the app unless that fails.
 
 Dictation similarly runs its model adapters in a bundled helper, with bounded in-memory audio and
 text over pipes. The coordinator keeps microphone capture, UI and insertion in Tinycast; the model
@@ -124,7 +127,8 @@ store starts the helper on demand and reaps it after the selected idle delay or 
 
 ## Entry points and windows
 
-`TinycastApp` (`@main`) declares only two `MenuBarExtra` scenes — Tinycast's own item and the
+`TinycastLaunch` (`@main`) pins the interface language, then runs `TinycastApp`, which declares
+only two `MenuBarExtra` scenes — Tinycast's own item and the
 calendar's, each inserted by one preference and independent of the other; everything else visible is
 driven imperatively from AppKit. Extension menu extras are dynamic `NSStatusItem`s owned entirely by
 `Features/Extensions/`, through `ExtensionManager`, with no scene or lifecycle wiring in the core.

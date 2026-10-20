@@ -20,24 +20,25 @@ There are 21 panes in four groups.
 | ------------ | -------- |
 | App Launcher | **None** |
 
-| Setting                           | Options                                                                       | Default                           |
-| --------------------------------- | ----------------------------------------------------------------------------- | --------------------------------- |
-| Learned ranking                   | **Reset…** clears all learned ranking                                         |                                   |
-| Hyper Key                         | None · Caps Lock · Right Control · Right Shift · Right Option · Right Command | **None**                          |
-| Quick Press                       | Does Nothing · the original key · Trigger Escape                              | **Does Nothing**                  |
-| Include Shift (⇧)                 | On · Off                                                                      | **On**                            |
-| Theme                             | System · Light · Dark                                                         | **System**                        |
-| Interface size                    | Default · Large · Larger                                                      | **Default**                       |
-| Background transparency           | Less to More, with Reset                                                      | Middle                            |
-| Compact mode                      | On · Off                                                                      | Off                               |
-| Show favorites in compact mode    | On · Off                                                                      | **On**                            |
-| Follow the cursor across displays | On · Off                                                                      | **On**                            |
-| Drag to reposition                | On · Off                                                                      | Off                               |
-| Launch at login                   | On · Off                                                                      | Off                               |
-| Show in menu bar                  | On · Off                                                                      | **On**                            |
-| Pop to Root Search                | Immediately · After 5, 15, 30, 60 or 90 seconds                               | **Immediately**                   |
-| Escape Key Behavior               | Navigate back or close window · Close window and pop to root                  | **Navigate back or close window** |
-| Auto-switch input source          | None, or any keyboard input source you have                                   | **None**                          |
+| Setting                           | Options                                                            | Default                           |
+| --------------------------------- | ------------------------------------------------------------------ | --------------------------------- |
+| Learned ranking                   | **Reset…** clears all learned ranking                              |                                   |
+| Hyper Key                         | None · Caps Lock · Left or Right Control, Shift, Option or Command | **None**                          |
+| Quick Press                       | Does Nothing · the original key · Trigger Escape                   | **Does Nothing**                  |
+| Include Shift (⇧)                 | On · Off                                                           | **On**                            |
+| Secure Input Compatibility        | On · Off (Caps Lock only)                                          | **Off**                           |
+| Theme                             | System · Light · Dark                                              | **System**                        |
+| Interface size                    | Default · Large · Larger                                           | **Default**                       |
+| Background transparency           | Less to More, with Reset                                           | Middle                            |
+| Compact mode                      | On · Off                                                           | Off                               |
+| Show favorites in compact mode    | On · Off                                                           | **On**                            |
+| Follow the cursor across displays | On · Off                                                           | **On**                            |
+| Drag to reposition                | On · Off                                                           | Off                               |
+| Launch at login                   | On · Off                                                           | Off                               |
+| Show in menu bar                  | On · Off                                                           | **On**                            |
+| Pop to Root Search                | Immediately · After 5, 15, 30, 60 or 90 seconds                    | **Immediately**                   |
+| Escape Key Behavior               | Navigate back or close window · Close window and pop to root       | **Navigate back or close window** |
+| Auto-switch input source          | None, or any keyboard input source you have                        | **None**                          |
 
 See [The palette](/docs/palette), [Learned ranking](/docs/launcher#learned-ranking) and
 [Hotkeys](/docs/reference/hotkeys#hyper-key).
@@ -68,17 +69,17 @@ row's checkbox only hides that row from search.
 
 Everything here is **off** by default, except Clipboard and Emoji & Symbols.
 
-| Pane                                                  | Switch                            | Other settings                                                                                                                                                                                                                                |
-| ----------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pane                                                  | Switch                            | Other settings                                                                                                                                                                                                                                   |
+| ----------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [AI](/docs/ai)                                        | Enable AI                         | Providers, Default model (Quick AI and AI Chat, with reasoning effort), Web search, Tool call rounds, Opens to, Start a new conversation after, Keep conversations, System prompt, [MCP servers](/docs/ai/mcp), AI commands   |
-| [Quick Actions](/docs/ai/quick-actions)               | Enable Quick Actions              | Actions (Replace or Preview, shortcut, prompt, model), Add Quick Action, Model, Translate to                                                                                                                                                  |
-| [File Search](/docs/features/file-search)             | Enable File Search                | Commands, Search Scopes, Ignore Patterns                                                                                                                                                                                                      |
-| [Notes](/docs/features/notes)                         | Enable Notes                      | Notes commands                                                                                                                                                                                                                                |
-| [Snippets](/docs/features/snippets)                   | Enable snippets                   | Show in launcher, snippet commands, New Snippet, Snippets Folder                                                                                                                                                                              |
-| [Navigation](/docs/features/navigation)               | Enable navigation                 | Commands, Show Apple menu items (**Off**), Disabled Applications                                                                                                                                                                              |
-| [Window Management](/docs/features/window-management) | Enable window management          | Show in launcher, Cycling (**None**), Gap between windows (**0**), window commands, [Window Layouts](/docs/features/window-layouts), [Rooms](/docs/features/rooms)                                                                                                           |
-| [Clipboard](/docs/features/clipboard)                 | Enable Clipboard History (**On**) | Clipboard commands, Keep history for (**3 Months**), Search text in images and PDFs (**Off**), Default action (**Paste**), Disabled Applications, Clear history                                                                               |
-| [Emoji & Symbols](/docs/features/emoji)               | _(always on)_                     | Emoji commands, Emoji Skin Tone (**Default**)                                                                                                                                                                                                 |
+| [Quick Actions](/docs/ai/quick-actions)               | Enable Quick Actions              | Actions (Replace or Preview, shortcut, prompt, model), Add Quick Action, Model, Translate to                                                                                                                                                     |
+| [File Search](/docs/features/file-search)             | Enable File Search                | Show in launcher (**Off**), Commands, Search Scopes, Ignore Patterns                                                                                                                                                                             |
+| [Notes](/docs/features/notes)                         | Enable Notes                      | Notes commands                                                                                                                                                                                                                                   |
+| [Snippets](/docs/features/snippets)                   | Enable snippets                   | Show in launcher, snippet commands, New Snippet, Snippets Folder                                                                                                                                                                                 |
+| [Navigation](/docs/features/navigation)               | Enable navigation                 | Commands, Show Apple menu items (**Off**), Disabled Applications                                                                                                                                                                                 |
+| [Window Management](/docs/features/window-management) | Enable window management          | Show in launcher, Cycling (**None**), Gap between windows (**0**), window commands, [Window Layouts](/docs/features/window-layouts), [Rooms](/docs/features/rooms)                                                                               |
+| [Clipboard](/docs/features/clipboard)                 | Enable Clipboard History (**On**) | Clipboard commands, Keep history for (**3 Months**), Search text in images and PDFs (**Off**), Default action (**Paste**), Disabled Applications, Clear history                                                                                  |
+| [Emoji & Symbols](/docs/features/emoji)               | _(always on)_                     | Emoji commands, Emoji Skin Tone (**Default**)                                                                                                                 |
 | [Calendar](/docs/features/calendar)                   | Join meetings from Tinycast       | Show in launcher, Upcoming meetings in launcher (**5 next**), Days to Show (**Today and Tomorrow**), Show the join card (**5 minutes**), Auto Join Meetings (**Off**), Camera Preview (**Off**), menu bar settings, Calendar commands, Calendars |
 | [Extensions](/docs/extensions)                        | Enable extensions                 | Show in launcher, Compatibility, installed extensions, Install, Registries, Package manager, Storage                                                                                                                                             |
 

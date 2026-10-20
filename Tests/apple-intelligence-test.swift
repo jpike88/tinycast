@@ -1,5 +1,3 @@
-// The on-device route; the end-to-end leg skips with a reason on a Mac that cannot run it.
-
 import FoundationModels
 import Foundation
 
@@ -23,7 +21,11 @@ struct AppleIntelligenceTests {
         deltasFollowCumulativeSnapshots()
         turnsSplitThePromptFromItsHistory()
         generationErrorsBecomeReadableFailures()
-        await onDeviceModelAnswers()
+        if ProcessInfo.processInfo.environment["TINYCAST_TEST_APPLE_INTELLIGENCE"] == "1" {
+            await onDeviceModelAnswers()
+        } else {
+            print("skip  on-device stream — set TINYCAST_TEST_APPLE_INTELLIGENCE=1 to run")
+        }
 
         print("\(passes) passed, \(failures) failed")
         if failures > 0 { exit(1) }
@@ -128,7 +130,6 @@ struct AppleIntelligenceTests {
             "a decoding failure is the shared malformed-response case")
     }
 
-    /// The real thing, end to end, when this Mac can run it.
     static func onDeviceModelAnswers() async {
         let status = AppleIntelligenceProvider.status()
         guard status.isAvailable else {

@@ -12,10 +12,8 @@ enum AIPreamble {
         alternative to Raycast that also runs Raycast extensions natively. You are reached from \
         Quick AI in its command palette or from its AI Chat window.
 
-        To offer a choice of a few next steps, end with a block that opens with ```choices and \
-        closes with ```, one short option per line; each becomes a button that answers for the \
-        user. Link any page your answer relies on inline as a Markdown link with its URL; \
-        Tinycast lists those as sources. Never write a link without a URL.
+        Link any page your answer relies on inline as a Markdown link with its URL; Tinycast \
+        lists those as sources. Never write a link without a URL.
 
         IMPORTANT: If you have access to the web_lookup tool, or intend to use the read_page tool \
         and if the user is asking about something that may have documentation for it, check to ensure \
@@ -28,5 +26,12 @@ enum AIPreamble {
 
         DO NOT OVERTHINK UNLESS THE USER EXPLICITLY ASKS FOR DEEPER THINKING. GET STRAIGHT TO THE POINT. \
         DO NOT BE AFRAID TO LEAN HEAVILY ON web_lookup OR read_page IF THE ANSWER REQUIRES AN UP-TO-DATE SOURCE.
+        """
+
+    /// Asked for only while suggested replies are on, so no turn pays for buttons nobody sees.
+    static let choices = """
+        To offer a choice of a few next steps, end with a block that opens with ```choices and \
+        closes with ```, one short option per line; each becomes a button that answers for the \
+        user.
         """
 }

@@ -36,8 +36,11 @@ commands and global shortcuts can show, search, or extend the collection.
 - **The window's height always fits the note.** Every edit, note switch and bar toggle grows or
   shrinks it between the 180pt floor and 860pt, or the screen's visible height; past that the editor
   scrolls. The top edge holds until the bottom would leave the visible frame, then the window moves
-  up. A manually dragged height lasts until the next edit. The height comes from TextKit's last layout
-  fragment, because the text view's frame never gets shorter than its clip view.
+  up. A manually dragged height lasts until the next edit. The height is the sum of TextKit's layout
+  fragment heights, laid out from the top a paragraph at a time until it passes the tallest window: the
+  text view's frame never gets shorter than its clip view, and until the next draw the lines below an
+  edit keep their old origins, so neither the frame nor the last fragment's position can be read on
+  `didChange`.
 - **The editor is a surface snippets expand into.** `NoteTextView` adopts `InjectableTextView`,
   so a typed keyword — and the Snippets browser's ↵ — is written straight into the text storage
   rather than posted as events at whichever app happens to be frontmost. Quick Actions also read and
@@ -77,6 +80,7 @@ skipped, block and inline Markdown markers are dropped whether or not rendering 
 capped to 120 characters so no row or title bar has to carry a paragraph. `NoteSummary.title` remains the filename; `displayTitle` is what every
 surface renders — switcher rows and their VoiceOver labels, the Trash confirmation, the window title,
 and the title band of `NoteSearch`, so a fuzzy query reaches a note nobody has named.
+An empty unnamed note displays a localized Untitled label, preserving its filename and numeric suffix.
 
 `list()` reads at most 4 KB of each unnamed note to derive it, and a named note costs nothing beyond
 the enumeration it already pays for. The **active** note derives from the live draft rather than the
@@ -203,7 +207,10 @@ carries a `NoteBlockDecoration` is laid out by `NoteBlockLayoutFragment`, which 
 their language label, quote bars, rules, bullets, the source's own list numbers, and checkboxes, all
 list markers in a neutral gray. Vertical
 spacing comes from paragraph styles: overriding the fragment's frame would leave the caret above the
-glyphs. There are no text attachments, overlay controls, `NSTextList`, `NSTextTable` or private API.
+glyphs. A marker sits on the item's first line of text, not its first line fragment: a first word
+too wide for the line wraps below the hidden marker, leaving the marker a line of almost no height,
+and the checkbox hit test reads the same line. There are no text attachments, overlay controls,
+`NSTextList`, `NSTextTable` or private API.
 
 ### Editing
 
@@ -327,7 +334,7 @@ undo isolation, undo and redo shortcut routing, source publication and character
 exact source after styling, hidden and revealed markers, restyling after edits and after undo, block
 decorations and layout fragments, list keys, chords, the task rule, checkbox toggles, link schemes,
 pasting a URL, and the formatting reports and `format(_:)` the formatting bar uses.
-`Tests/notes-editor-performance.swift` times install, typing and caret moves on a
-100,000-character note; its budget is in `docs/testing.md`. Window chrome is not automated:
+`Tests/notes-editor-performance.swift` times install, typing, the window fit's height read and caret
+moves on a 100,000-character note; its budget is in `docs/testing.md`. Window chrome is not automated:
 the Notes manual sweep in `docs/testing.md` covers commands, shortcuts, switcher, focus restoration,
 Finder, Trash recovery, and accessibility.
